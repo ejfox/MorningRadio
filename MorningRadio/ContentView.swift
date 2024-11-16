@@ -7,79 +7,77 @@
 
 import SwiftUI
 import CoreData
+import Foundation
 
 struct ContentView: View {
-    @Environment(\.managedObjectContext) private var viewContext
-
-    @FetchRequest(
-        sortDescriptors: [NSSortDescriptor(keyPath: \Item.timestamp, ascending: true)],
-        animation: .default)
-    private var items: FetchedResults<Item>
+    @State private var scraps: [Scrap] = []
+    @State private var currentIndex: Int = 0
+    @State private var isLoading: Bool = true
+    @State private var showError: Bool = false
+    @State private var selectedScrap: Scrap? = nil
+    @State private var selectedImage: UIImage? = nil
 
     var body: some View {
         NavigationView {
-            List {
-                ForEach(items) { item in
-                    NavigationLink {
-                        Text("Item at \(item.timestamp!, formatter: itemFormatter)")
-                    } label: {
-                        Text(item.timestamp!, formatter: itemFormatter)
+            ZStack {
+                if isLoading {
+                    LoadingView()
+                } else if showError {
+                    ErrorView(retryAction: fetchScraps)
+                } else {
+                    VerticalPagingView(scraps: scraps, selectedScrap: $selectedScrap, selectedImage: $selectedImage)
+                        .edgesIgnoringSafeArea(.all)
+                }
+
+                if let scrap = selectedScrap {
+                    ScrapDetailView(scrap: scrap, uiImage: selectedImage) {
+                        withAnimation(.easeInOut(duration: 0.3)) {
+                            selectedScrap = nil
+                            selectedImage = nil
+                        }
                     }
-                }
-                .onDelete(perform: deleteItems)
-            }
-            .toolbar {
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    EditButton()
-                }
-                ToolbarItem {
-                    Button(action: addItem) {
-                        Label("Add Item", systemImage: "plus")
-                    }
+                    .transition(.move(edge: .bottom))
+                    .zIndex(1)
                 }
             }
-            Text("Select an item")
+            .navigationBarHidden(true)
+            .onAppear(perform: fetchScraps)
         }
     }
 
-    private func addItem() {
-        withAnimation {
-            let newItem = Item(context: viewContext)
-            newItem.timestamp = Date()
-
+    private func fetchScraps() {
+        Task {
             do {
-                try viewContext.save()
-            } catch {
-                // Replace this implementation with code to handle the error appropriately.
-                // fatalError() causes the application to generate a crash log and terminate. You should not use this function in a shipping application, although it may be useful during development.
-                let nsError = error as NSError
-                fatalError("Unresolved error \(nsError), \(nsError.userInfo)")
-            }
-        }
-    }
+                let rawResponse = try await SupabaseManager.shared.client
+                    .from("scraps")
+                    .select("id, content, summary, metadata")
+                    .order("created_at", ascending: false)
+                    .limit(64)
+                    .execute()
 
-    private func deleteItems(offsets: IndexSet) {
-        withAnimation {
-            offsets.map { items[$0] }.forEach(viewContext.delete)
+                let data = rawResponse.data
 
-            do {
-                try viewContext.save()
+                let decoder = JSONDecoder()
+                decoder.keyDecodingStrategy = .convertFromSnakeCase
+                let decodedScraps = try decoder.decode([Scrap].self, from: data)
+
+                DispatchQueue.main.async {
+                    withAnimation {
+                        self.scraps = decodedScraps
+                        self.isLoading = false
+                    }
+                }
             } catch {
-                // Replace this implementation with code to handle the error appropriately.
-                // fatalError() causes the application to generate a crash log and terminate. You should not use this function in a shipping application, although it may be useful during development.
-                let nsError = error as NSError
-                fatalError("Unresolved error \(nsError), \(nsError.userInfo)")
+                DispatchQueue.main.async {
+                    withAnimation {
+                        self.isLoading = false
+                        self.showError = true
+                    }
+                }
             }
         }
     }
 }
-
-private let itemFormatter: DateFormatter = {
-    let formatter = DateFormatter()
-    formatter.dateStyle = .short
-    formatter.timeStyle = .medium
-    return formatter
-}()
 
 #Preview {
     ContentView().environment(\.managedObjectContext, PersistenceController.preview.container.viewContext)
