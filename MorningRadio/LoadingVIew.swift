@@ -4,14 +4,15 @@ import Combine
 struct LoadingView: View {
     @State private var orbitAngle: Double = 0.0
     @State private var opacity: Double = 0.0
-    @State private var loadingText: [String] = Array(repeating: "", count: 6) // 6 elements for "WAKEUP"
+    @State private var loadingText: [String] = Array(repeating: "", count: 13) //
     @State private var hudValues: [Double] = Array(repeating: 0, count: 5)
     @State private var subtleOffset: CGSize = .zero
+    @State private var isInitialLoad: Bool = true
     
     private let orbitDuration: Double = 10.0 // Slower animation for smoothness
     private let circleSize: CGFloat = 200
     private let orbitRadius: CGFloat = 60
-    private let word = "WAKEUP"
+    private let word = "MORNING RADIO"
     private let timer = Timer.publish(every: 0.05, on: .main, in: .common).autoconnect()
     private let subtleAnimation = Animation.easeInOut(duration: 5.0).repeatForever(autoreverses: true)
     
@@ -25,50 +26,18 @@ struct LoadingView: View {
     var body: some View {
         GeometryReader { geometry in
             ZStack {
-                // Light Background with Subtle Moving Overlay
-                LinearGradient(
-                    gradient: Gradient(colors: [Color.white, Color(white: 0.95)]),
-                    startPoint: .top,
-                    endPoint: .bottom
-                )
-                .ignoresSafeArea()
+
                 
                 VStack(spacing: 40) {
-                    // Orbital Visualization
-                    ZStack {
-                        OrbitalCircle(
-                            orbitAngle: orbitAngle,
-                            orbitRadius: orbitRadius,
-                            circleSize: circleSize,
-                            color: Color.black.opacity(0.2)
-                        )
-                        .animation(
-                            Animation.timingCurve(0.25, 0.1, 0.25, 1.0, duration: orbitDuration)
-                                .repeatForever(autoreverses: false),
-                            value: orbitAngle
-                        )
-                        
-                        CentralAccentCircle(
-                            orbitAngle: orbitAngle,
-                            orbitRadius: orbitRadius,
-                            size: 20,
-                            color: Color.red
-                        )
-                        .animation(
-                            Animation.timingCurve(0.25, 0.1, 0.25, 1.0, duration: orbitDuration)
-                                .repeatForever(autoreverses: false),
-                            value: orbitAngle
-                        )
-                    }
-                    .offset(subtleOffset)
-                    .animation(subtleAnimation, value: subtleOffset)
                     
                     // HUD Elements with Subtle Movement
-                    HStack(spacing: 30) {
+                    HStack(spacing: 90) {
                         // Simplified Bar Charts
                         HUDBarChart(hudValues: hudValues)
                             .offset(subtleOffset)
                             .animation(subtleAnimation, value: subtleOffset)
+                            .opacity(isInitialLoad ? 0 : 1)
+                            .animation(.easeInOut(duration: 1.0).delay(0.7), value: isInitialLoad)
                         
                         // Loading Text
                         LoadingTextView(
@@ -77,11 +46,9 @@ struct LoadingView: View {
                         )
                         .offset(subtleOffset)
                         .animation(subtleAnimation, value: subtleOffset)
+                        .opacity(isInitialLoad ? 0 : 1)
+                        .animation(.easeInOut(duration: 1.0).delay(0.7), value: isInitialLoad)
                         
-                        // Pop of Color Element (Red Circular Indicator) with Subtle Movement
-                        AccentIndicator(opacity: opacity)
-                            .offset(subtleOffset)
-                            .animation(subtleAnimation, value: subtleOffset)
                     }
                     .padding(.horizontal)
                 }
@@ -91,25 +58,33 @@ struct LoadingView: View {
                 BorderTextView(
                     topText: currentDate,
                     bottomText: "Morning Radio",
-                    leftText: "🌅",
-                    rightText: "📻"
+                    leftText: "YOU ARE WHAT YOU EAT",
+                    rightText: "LIVE IN UNCERTAINTY AND EAT THE CONSEQUENCES"
                 )
                 .frame(width: geometry.size.width, height: geometry.size.height)
+                .opacity(isInitialLoad ? 0 : 1)
+                .animation(.easeInOut(duration: 1.0).delay(0.9), value: isInitialLoad)
             }
             .onAppear {
-                // Fade In Animation
-                withAnimation(Animation.timingCurve(0.25, 0.1, 0.25, 1.0, duration: 1.5)) {
-                    opacity = 1
+                // Start with white screen
+                isInitialLoad = true
+                
+                // Sequence the reveal
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+                    withAnimation(Animation.timingCurve(0.25, 0.1, 0.25, 1.0, duration: 2.5)) {
+                        isInitialLoad = false
+                        opacity = 1
+                    }
+                    
+                    // Start Orbit Animation
+                    orbitAngle = 360
+                    
+                    // Start Subtle Movement Animation
+                    subtleOffset = CGSize(width: 32, height: 32)
+                    
+                    // Animate Loading Text
+                    animateText()
                 }
-                
-                // Start Orbit Animation
-                orbitAngle = 360
-                
-                // Start Subtle Movement Animation
-                subtleOffset = CGSize(width: 10, height: 10)
-                
-                // Animate Loading Text
-                animateText()
             }
             .onReceive(timer) { _ in
                 updateHUDValues()
@@ -121,7 +96,7 @@ struct LoadingView: View {
     
     private func animateText() {
         for (index, _) in word.enumerated() {
-            DispatchQueue.main.asyncAfter(deadline: .now() + Double(index) * 0.2) {
+            DispatchQueue.main.asyncAfter(deadline: .now() + Double(index) * 0.4) {
                 if index < loadingText.count {
                     let char = word[word.index(word.startIndex, offsetBy: index)]
                     loadingText[index] = String(char)
@@ -184,8 +159,8 @@ struct HUDBarChart: View {
                     ForEach(0..<10, id: \.self) { barIndex in
                         Rectangle()
                             .fill(barIndex < Int(hudValues[index] * 10) ? Color.black : Color.black.opacity(0.1))
-                            .frame(width: 3, height: 6)
-                            .animation(.easeInOut(duration: 0.5), value: hudValues[index])
+                            .frame(width: 6, height: 6)
+                            .animation(.easeInOut(duration: 0.95), value: hudValues[index])
                     }
                 }
             }
@@ -234,50 +209,52 @@ struct BorderTextView: View {
     var rightText: String
     
     var body: some View {
-        ZStack {
-            // Top Border Text
-            HStack {
-                Spacer()
-                Text(topText)
-                    .font(.system(size: 10, weight: .regular, design: .monospaced))
-                    .foregroundColor(.black.opacity(0.6))
-                    .rotationEffect(.degrees(0))
-                Spacer()
+        GeometryReader { geometry in
+            ZStack {
+                // Top Border Text
+                HStack {
+                    Spacer()
+                    Text(topText)
+                        .font(.system(size: 10, weight: .regular, design: .monospaced))
+                        .foregroundColor(.black.opacity(0.6))
+                        .rotationEffect(.degrees(0))
+                    Spacer()
+                }
+                .position(x: geometry.size.width / 2, y: 10)
+                
+                // Bottom Border Text
+                HStack {
+                    Spacer()
+                    Text(bottomText)
+                        .font(.system(size: 10, weight: .regular, design: .monospaced))
+                        .foregroundColor(.black.opacity(0.6))
+                        .rotationEffect(.degrees(0))
+                    Spacer()
+                }
+                .position(x: geometry.size.width / 2, y: geometry.size.height - 10)
+                
+                // Left Border Text
+                VStack {
+                    Spacer()
+                    Text(leftText)
+                        .font(.system(size: 10, weight: .regular, design: .monospaced))
+                        .foregroundColor(.black.opacity(0.6))
+                        .rotationEffect(.degrees(-90))
+                    Spacer()
+                }
+                .position(x: 10, y: geometry.size.height / 2)
+                
+                // Right Border Text
+                VStack {
+                    Spacer()
+                    Text(rightText)
+                        .font(.system(size: 10, weight: .regular, design: .monospaced))
+                        .foregroundColor(.black.opacity(0.6))
+                        .rotationEffect(.degrees(90))
+                    Spacer()
+                }
+                .position(x: geometry.size.width - 10, y: geometry.size.height / 2)
             }
-            .padding(.top, 5)
-            
-            // Bottom Border Text
-            HStack {
-                Spacer()
-                Text(bottomText)
-                    .font(.system(size: 10, weight: .regular, design: .monospaced))
-                    .foregroundColor(.black.opacity(0.6))
-                    .rotationEffect(.degrees(0))
-                Spacer()
-            }
-            .padding(.bottom, 5)
-            
-            // Left Border Text
-            VStack {
-                Spacer()
-                Text(leftText)
-                    .font(.system(size: 10, weight: .regular, design: .monospaced))
-                    .foregroundColor(.black.opacity(0.6))
-                    .rotationEffect(.degrees(-90))
-                Spacer()
-            }
-            .padding(.leading, 5)
-            
-            // Right Border Text
-            VStack {
-                Spacer()
-                Text(rightText)
-                    .font(.system(size: 10, weight: .regular, design: .monospaced))
-                    .foregroundColor(.black.opacity(0.6))
-                    .rotationEffect(.degrees(90))
-                Spacer()
-            }
-            .padding(.trailing, 5)
         }
     }
 }
