@@ -18,31 +18,29 @@ struct ContentView: View {
     @State private var selectedImage: UIImage? = nil
 
     var body: some View {
-        NavigationView {
-            ZStack {
-                if isLoading {
-                    LoadingView()
-                } else if showError {
-                    ErrorView(retryAction: fetchScraps)
-                } else {
-                    VerticalPagingView(scraps: scraps, selectedScrap: $selectedScrap, selectedImage: $selectedImage)
-                        .edgesIgnoringSafeArea(.all)
-                }
-
-                if let scrap = selectedScrap {
-                    ScrapDetailView(scrap: scrap, uiImage: selectedImage) {
-                        withAnimation(.easeInOut(duration: 0.3)) {
-                            selectedScrap = nil
-                            selectedImage = nil
-                        }
-                    }
-                    .transition(.move(edge: .bottom))
-                    .zIndex(1)
-                }
+        ZStack {
+            if isLoading {
+                LoadingView()
+            } else if showError {
+                ErrorView(retryAction: fetchScraps)
+            } else {
+                VerticalPagingView(scraps: scraps, selectedScrap: $selectedScrap, selectedImage: $selectedImage)
+                    .edgesIgnoringSafeArea(.all)
             }
-            .navigationBarHidden(true)
-            .onAppear(perform: fetchScraps)
+
+            if let scrap = selectedScrap {
+                ScrapDetailView(scrap: scrap, uiImage: selectedImage) {
+                    withAnimation(.easeInOut(duration: 0.3)) {
+                        selectedScrap = nil
+                        selectedImage = nil
+                    }
+                }
+                .transition(.move(edge: .bottom))
+                .zIndex(1)
+                .ignoresSafeArea()  // Add this
+            }
         }
+        .onAppear(perform: fetchScraps)
     }
 
     private func fetchScraps() {

@@ -7,21 +7,6 @@
 
 import SwiftUI
 
-// MARK: - LoadingView
-struct LoadingView: View {
-    var body: some View {
-        VStack {
-            Spacer()
-            ProgressView("Loading...")
-                .progressViewStyle(CircularProgressViewStyle(tint: .white))
-                .foregroundColor(.white)
-                .padding()
-            Spacer()
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color.black)
-    }
-}
 
 // MARK: - ErrorView
 struct ErrorView: View {

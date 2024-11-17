@@ -8,6 +8,13 @@
 import SwiftUI
 import UIKit
 
+extension CGFloat {
+    var degrees: Angle {
+        Angle(degrees: Double(self))
+    }
+}
+
+
 // MARK: - ShareSheet
 struct ShareSheet: UIViewControllerRepresentable {
     var items: [Any]
@@ -28,13 +35,55 @@ struct VerticalPagingView: View {
     @Binding var selectedScrap: Scrap?
     @Binding var selectedImage: UIImage?
     @State private var currentIndex: Int = 0
-    @GestureState private var dragOffset: CGFloat = 0
+    @State private var dragOffset: CGFloat = 0
     @State private var isAppearing = false
+    @State private var velocityY: CGFloat = 0
+    @State private var lastDragTime: Date = Date()
+    @State private var lastDragPosition: CGFloat = 0
+    
+    // Animation and interaction constants
+    private let velocityThreshold: CGFloat = 200
+    private let dragThreshold: CGFloat = UIScreen.main.bounds.height * 0.15
+    private let springAnimation = Animation.interpolatingSpring(
+        mass: 1.0,
+        stiffness: 100,
+        damping: 20,
+        initialVelocity: 0
+    )
+    
+    // And let's break up that complex transform calculation:
+    private func calculateTransforms(
+        for index: Int,
+        geometry: GeometryProxy
+    ) -> (offset: CGFloat, scale: CGFloat, rotation: Angle, opacity: CGFloat) {
+        let offset = CGFloat(index - currentIndex)
+        let dragProgress = dragOffset / geometry.size.height
+        
+        // Calculate offset
+        let baseOffset = CGFloat(index - currentIndex) * geometry.size.height
+        let dragInfluence = dragOffset * (1 - abs(offset) * 0.5)
+        let finalOffset = baseOffset + dragInfluence
+        
+        // Calculate scale
+        let scale = 1 - abs(offset + dragProgress) * 0.1
+        
+        // Calculate rotation
+        let rotationBase = dragProgress * 2
+        let rotationAmount = offset == 0 ? rotationBase : rotationBase * (1 / (abs(offset) + 1))
+        let rotation = Angle(degrees: Double(rotationAmount))
+        
+        // Calculate opacity
+        let opacityBase = 1 - abs(offset + dragProgress) * 0.3
+        let opacityBoost = max(0, 1 - abs(dragProgress) * 2)
+        let opacity = min(1, opacityBase + (index == currentIndex ? opacityBoost * 0.2 : 0))
+
+        return (finalOffset, scale, rotation, opacity)
+    }
     
     var body: some View {
         GeometryReader { geometry in
             ZStack {
-                // Morning gradient background
+                // Background gradient
                 LinearGradient(
                     colors: [
                         Color(red: 0.1, green: 0.1, blue: 0.2),
@@ -43,51 +92,118 @@ struct VerticalPagingView: View {
                     startPoint: .top,
                     endPoint: .bottom
                 )
+                .blur(radius: min(abs(dragOffset) / 50, 10))
                 .ignoresSafeArea()
                 
+                // Scrap cards
                 ForEach(scraps.indices, id: \.self) { index in
+                    let transforms = calculateTransforms(for: index, geometry: geometry)
+                    
                     ScrapView(
                         scrap: scraps[index],
                         selectedScrap: $selectedScrap,
                         selectedImage: $selectedImage
                     )
                     .frame(width: geometry.size.width, height: geometry.size.height)
-                    .offset(y: CGFloat(index - currentIndex) * geometry.size.height + dragOffset)
-                    .animation(.interpolatingSpring(stiffness: 300, damping: 30), value: currentIndex)
-                    .opacity(isAppearing ? 1 : 0)
-                }
-            }
-            .onAppear {
-                withAnimation(.easeOut(duration: 1.2)) {
-                    isAppearing = true
+                    .offset(y: transforms.offset)
+                    .scaleEffect(transforms.scale)
+                    .rotation3DEffect(
+                        transforms.rotation,
+                        axis: (x: 0, y: 1, z: 0),
+                        anchor: .center,
+                        anchorZ: 0,
+                        perspective: 1
+                    )
+                    .opacity(transforms.opacity)
+                    // Add subtle shadow animation
+                    .shadow(
+                        color: .black.opacity(0.2),
+                        radius: 20 * (1 - abs(CGFloat(index - currentIndex)) * 0.5),
+                        x: 0,
+                        y: 10
+                    )
+                    // Add subtle blur based on movement
+                    .blur(radius: abs(dragOffset) / 200)
+                    // Custom spring animation for each property
+                    .animation(
+                        .interpolatingSpring(
+                            mass: 1.0,
+                            stiffness: 100,
+                            damping: 20,
+                            initialVelocity: velocityY / 1000
+                        ),
+                        value: currentIndex
+                    )
+                    // Separate animation for drag
+                    .animation(
+                        .interactiveSpring(
+                            response: 0.3,
+                            dampingFraction: 0.7,
+                            blendDuration: 0.1
+                        ),
+                        value: dragOffset
+                    )
                 }
             }
             .gesture(
                 DragGesture()
-                    .updating($dragOffset) { value, state, _ in
-                        state = value.translation.height
+                    .onChanged { value in
+                        // Calculate velocity
+                        let currentTime = Date()
+                        let timeDelta = currentTime.timeIntervalSince(lastDragTime)
+                        let position = value.translation.height
+                        velocityY = CGFloat((position - lastDragPosition) / timeDelta)
+                        
+                        // Update drag state
+                        dragOffset = value.translation.height
+                        lastDragTime = currentTime
+                        lastDragPosition = position
+                        
+                        // Haptic feedback
+                        if abs(dragOffset).truncatingRemainder(dividingBy: 50) < 1 {
+                            let generator = UIImpactFeedbackGenerator(style: .soft)
+                            generator.prepare()
+                            generator.impactOccurred(intensity: min(abs(velocityY) / 1000, 1))
+                        }
                     }
                     .onEnded { value in
-                        let threshold = geometry.size.height / 3
-                        var newIndex = currentIndex
+                        let velocity = velocityY
+                        let translation = value.translation.height
                         
-                        if value.translation.height < -threshold {
-                            newIndex = min(newIndex + 1, scraps.count - 1)
-                            let impact = UIImpactFeedbackGenerator(style: .soft)
-                            impact.impactOccurred()
-                        } else if value.translation.height > threshold {
-                            newIndex = max(newIndex - 1, 0)
-                            let impact = UIImpactFeedbackGenerator(style: .soft)
-                            impact.impactOccurred()
+                        // Determine if we should change page
+                        let shouldChangePage = abs(velocity) > velocityThreshold ||
+                                            abs(translation) > dragThreshold
+                        
+                        if shouldChangePage {
+                            let direction = translation > 0 ? -1 : 1
+                            let newIndex = max(0, min(scraps.count - 1, currentIndex + direction))
+                            
+                            if newIndex != currentIndex {
+                                withAnimation(springAnimation) {
+                                    currentIndex = newIndex
+                                }
+                                
+                                // Haptic feedback for page change
+                                let generator = UIImpactFeedbackGenerator(style: .medium)
+                                generator.impactOccurred()
+                            }
                         }
                         
-                        withAnimation(.easeInOut(duration: 0.4)) {
-                            currentIndex = newIndex
+                        // Reset states
+                        withAnimation(.easeOut(duration: 0.2)) {
+                            dragOffset = 0
                         }
+                        velocityY = 0
                     }
             )
         }
         .edgesIgnoringSafeArea(.all)
+    }
+    
+    private func calculateOffset(for index: Int, in geometry: GeometryProxy) -> CGFloat {
+        let baseOffset = CGFloat(index - currentIndex) * geometry.size.height
+        let dragInfluence = dragOffset * (1 - abs(CGFloat(index - currentIndex)) * 0.5)
+        return baseOffset + dragInfluence
     }
 }
 
@@ -201,52 +317,24 @@ struct ScrapDetailView: View {
     
     @State private var showShareSheet: Bool = false
     @State private var isAppearing = false
-    @State private var contentHeight: CGFloat = 0
+    @Environment(\.colorScheme) private var colorScheme
     
     var body: some View {
         GeometryReader { geometry in
-            ZStack {
-                // Background
-                Group {
-                    if let image = uiImage {
-                        Image(uiImage: image)
-                            .resizable()
-                            .scaledToFill()
-                            .overlay(
-                                LinearGradient(
-                                    colors: [
-                                        .black.opacity(0.4),
-                                        .black.opacity(0.7)
-                                    ],
-                                    startPoint: .top,
-                                    endPoint: .bottom
-                                )
-                            )
-                            .ignoresSafeArea()
-                    } else {
-                        LinearGradient(
-                            colors: [
-                                Color(red: 0.1, green: 0.1, blue: 0.2),
-                                Color(red: 0.2, green: 0.2, blue: 0.3)
-                            ],
-                            startPoint: .top,
-                            endPoint: .bottom
-                        )
-                        .ignoresSafeArea()
-                    }
-                }
-                .opacity(isAppearing ? 1 : 0)
+            ZStack(alignment: .bottom) {
+                // MARK: - Background Layer
+                backgroundColor
                 
-                ScrollView(.vertical, showsIndicators: true) {
+                // MARK: - Content Layer
+                ScrollView(.vertical, showsIndicators: false) {
                     VStack(alignment: .leading, spacing: 24) {
-                        // Header
+                        // Header with Percentage-based Top Padding
                         Text(try! AttributedString(markdown: scrap.content))
                             .font(.system(size: 32, weight: .bold, design: .rounded))
-                            .foregroundColor(.white)
-                            .shadow(radius: 5)
+                            .foregroundColor(textColor)
                             .multilineTextAlignment(.leading)
-                            .padding(.top, 16)
-                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.top, geometry.size.height * 0.08)  // 8% of screen height
+                            .frame(maxWidth: geometry.size.width - 48, alignment: .leading)
                             .opacity(isAppearing ? 1 : 0)
                             .offset(y: isAppearing ? 0 : 30)
                         
@@ -254,25 +342,11 @@ struct ScrapDetailView: View {
                         if let summary = scrap.summary {
                             Text(try! AttributedString(markdown: summary))
                                 .font(.system(size: 18, weight: .regular, design: .rounded))
-                                .foregroundColor(.white.opacity(0.9))
-                                .shadow(radius: 3)
+                                .foregroundColor(textColor.opacity(0.8))
                                 .multilineTextAlignment(.leading)
-                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .frame(maxWidth: geometry.size.width - 48, alignment: .leading)
                                 .opacity(isAppearing ? 1 : 0)
                                 .offset(y: isAppearing ? 0 : 20)
-                        }
-                        
-                        // Image
-                        if let image = uiImage {
-                            Image(uiImage: image)
-                                .resizable()
-                                .scaledToFit()
-                                .frame(maxWidth: geometry.size.width - 48) // Account for horizontal padding
-                                .cornerRadius(16)
-                                .shadow(radius: 10)
-                                .padding(.vertical, 16)
-                                .opacity(isAppearing ? 1 : 0)
-                                .offset(y: isAppearing ? 0 : 40)
                         }
                         
                         // Metadata
@@ -280,75 +354,75 @@ struct ScrapDetailView: View {
                             VStack(alignment: .leading, spacing: 12) {
                                 Text("Details")
                                     .font(.system(size: 20, weight: .bold, design: .rounded))
-                                    .foregroundColor(.white)
+                                    .foregroundColor(textColor)
                                     .padding(.top, 16)
                                 
                                 ForEach(metadata.displayableProperties(), id: \.key) { item in
                                     HStack(alignment: .top) {
                                         Text("\(item.key.capitalized):")
                                             .font(.system(size: 16, weight: .semibold, design: .rounded))
-                                            .foregroundColor(.white.opacity(0.8))
+                                            .foregroundColor(textColor.opacity(0.7))
                                         Text("\(item.value)")
                                             .font(.system(size: 16, weight: .regular, design: .rounded))
-                                            .foregroundColor(.white)
+                                            .foregroundColor(textColor)
+                                            .fixedSize(horizontal: false, vertical: true)
                                     }
+                                    .frame(maxWidth: geometry.size.width - 64)
                                 }
                             }
                             .padding(.vertical, 16)
-                            .padding(.horizontal, 8)
                             .opacity(isAppearing ? 1 : 0)
                             .offset(y: isAppearing ? 0 : 50)
                         }
+                        
+                        // Bottom spacing for share button
+                        Spacer()
+                            .frame(height: 100)
                     }
                     .padding(.horizontal, 24)
-                    .padding(.bottom, max(100, geometry.size.height - contentHeight))
-                    .background(
-                        GeometryReader { proxy in
-                            Color.clear.preference(
-                                key: ContentHeightPreferenceKey.self,
-                                value: proxy.size.height
-                            )
-                        }
-                    )
                 }
-                .onPreferenceChange(ContentHeightPreferenceKey.self) { height in
-                    contentHeight = height
-                }
-                .coordinateSpace(name: "scroll")
+                .frame(width: geometry.size.width)
                 
-                // Share Button
+                // MARK: - Share Button Layer
                 VStack {
                     Spacer()
                     HStack {
                         Spacer()
                         Button(action: {
-                            let impact = UIImpactFeedbackGenerator(style: .light)
-                            impact.impactOccurred()
-                            showShareSheet = true
+                            let impact = UIImpactFeedbackGenerator(style: .soft)
+                            impact.impactOccurred(intensity: 0.7)
+                            withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                                showShareSheet = true
+                            }
                         }) {
-                            Image(systemName: "square.and.arrow.up")
-                                .resizable()
-                                .frame(width: 24, height: 24)
-                                .foregroundColor(.white)
-                                .padding(20)
-                                .background(Color.blue.opacity(0.8))
-                                .clipShape(Circle())
-                                .shadow(color: .black.opacity(0.2), radius: 10, x: 0, y: 5)
-                        }
-                        .padding(24)
-                        .sheet(isPresented: $showShareSheet) {
-                            if let href = scrap.metadata?.href, let url = URL(string: href) {
-                                ShareSheet(items: [url])
-                            } else {
-                                ShareSheet(items: [scrap.content])
+                            ZStack {
+                                Circle()
+                                    .fill(.ultraThinMaterial)
+                                    .frame(width: 50, height: 50)
+                                    .shadow(color: .black.opacity(0.1), radius: 4, x: 0, y: 2)
+                                
+                                Image(systemName: "square.and.arrow.up")
+                                    .font(.system(size: 20, weight: .semibold))
+                                    .foregroundColor(textColor)
                             }
                         }
-                        .scaleEffect(isAppearing ? 1 : 0.5)
-                        .opacity(isAppearing ? 1 : 0)
+                        .padding(.trailing, 24)
+                        .padding(.bottom, geometry.safeAreaInsets.bottom + 16)
+                        .offset(y: isAppearing ? 0 : 100)
                     }
                 }
             }
+            .frame(width: geometry.size.width, height: geometry.size.height)
+            .sheet(isPresented: $showShareSheet) {
+                if let href = scrap.metadata?.href,
+                   let url = URL(string: href) {
+                    ShareSheet(items: [url])
+                } else {
+                    ShareSheet(items: [scrap.content])
+                }
+            }
         }
+        .ignoresSafeArea()
         .onAppear {
             withAnimation(.easeOut(duration: 0.8)) {
                 isAppearing = true
@@ -361,7 +435,6 @@ struct ScrapDetailView: View {
             insertion: .move(edge: .bottom).combined(with: .opacity),
             removal: .move(edge: .bottom).combined(with: .opacity)
         ))
-        .animation(.easeInOut(duration: 0.3), value: showShareSheet)
         .onTapGesture {
             let impact = UIImpactFeedbackGenerator(style: .soft)
             impact.impactOccurred()
@@ -370,31 +443,18 @@ struct ScrapDetailView: View {
             }
         }
     }
-}
-
-// Add this preference key at the bottom of your Views.swift file
-private struct ContentHeightPreferenceKey: PreferenceKey {
-    static var defaultValue: CGFloat = 0
-    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
-        value = nextValue()
+    
+    // Computed properties for dynamic theming
+    private var backgroundColor: Color {
+        colorScheme == .dark ?
+            Color(red: 0.1, green: 0.1, blue: 0.2) :
+            Color.white
     }
-}
-
-// MARK: - Metadata Extension
-extension Metadata {
-    func displayableProperties() -> [(key: String, value: Any)] {
-        let mirror = Mirror(reflecting: self)
-        let excludedKeys = ["embedding", "embeddings", "base64Image"]
-        
-        return mirror.children
-            .compactMap { child in
-                guard let label = child.label,
-                      !excludedKeys.contains(label),
-                      let value = child.value as? CustomStringConvertible else {
-                    return nil
-                }
-                return (key: label, value: value)
-            }
+    
+    private var textColor: Color {
+        colorScheme == .dark ?
+            .white :
+            .black
     }
 }
 
@@ -417,5 +477,45 @@ struct WelcomeView: View {
         .opacity(isShowing ? 1 : 0)
         .offset(y: isShowing ? 0 : 20)
         .animation(.easeOut(duration: 1.0), value: isShowing)
+    }
+}
+
+// MARK: - ContentHeightPreferenceKey
+private struct ContentHeightPreferenceKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = nextValue()
+    }
+}
+
+
+// MARK: - Metadata Extension
+extension Metadata {
+    func displayableProperties() -> [(key: String, value: Any)] {
+        let mirror = Mirror(reflecting: self)
+        let excludedKeys = ["embedding", "embeddings", "base64Image"]
+        
+        return mirror.children
+            .compactMap { child in
+                guard let label = child.label,
+                      !excludedKeys.contains(label),
+                      let value = child.value as? CustomStringConvertible else {
+                    return nil
+                }
+                return (key: label, value: value)
+            }
+    }
+}
+
+// Add this BlurView somewhere in your Views.swift:
+struct BlurView: UIViewRepresentable {
+    let style: UIBlurEffect.Style
+
+    func makeUIView(context: Context) -> UIVisualEffectView {
+        return UIVisualEffectView(effect: UIBlurEffect(style: style))
+    }
+
+    func updateUIView(_ uiView: UIVisualEffectView, context: Context) {
+        uiView.effect = UIBlurEffect(style: style)
     }
 }
