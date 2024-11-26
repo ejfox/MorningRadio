@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		47047B302CF64112005F40B3 /* MapLibre in Frameworks */ = {isa = PBXBuildFile; productRef = 47047B2F2CF64112005F40B3 /* MapLibre */; };
 		471BD2282CE9240F00C8F75A /* Auth in Frameworks */ = {isa = PBXBuildFile; productRef = 471BD2272CE9240F00C8F75A /* Auth */; };
 		471BD22A2CE9240F00C8F75A /* PostgREST in Frameworks */ = {isa = PBXBuildFile; productRef = 471BD2292CE9240F00C8F75A /* PostgREST */; };
 		471BD22C2CE9240F00C8F75A /* Realtime in Frameworks */ = {isa = PBXBuildFile; productRef = 471BD22B2CE9240F00C8F75A /* Realtime */; };
@@ -77,6 +78,7 @@
 				471BD2312CE9250800C8F75A /* Supabase in Frameworks */,
 				471BD22C2CE9240F00C8F75A /* Realtime in Frameworks */,
 				471BD22A2CE9240F00C8F75A /* PostgREST in Frameworks */,
+				47047B302CF64112005F40B3 /* MapLibre in Frameworks */,
 				471BD2282CE9240F00C8F75A /* Auth in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -151,6 +153,7 @@
 				471BD22B2CE9240F00C8F75A /* Realtime */,
 				471BD2302CE9250800C8F75A /* Supabase */,
 				471BD2352CE926D900C8F75A /* Inject */,
+				47047B2F2CF64112005F40B3 /* MapLibre */,
 			);
 			productName = MorningRadio;
 			productReference = 471BD1F12CE922AF00C8F75A /* MorningRadio.app */;
@@ -237,6 +240,7 @@
 			packageReferences = (
 				471BD2262CE9240F00C8F75A /* XCRemoteSwiftPackageReference "supabase-swift" */,
 				471BD2342CE926D900C8F75A /* XCRemoteSwiftPackageReference "Inject" */,
+				47047B2E2CF64112005F40B3 /* XCRemoteSwiftPackageReference "maplibre-gl-native-distribution" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 471BD1F22CE922AF00C8F75A /* Products */;
@@ -605,6 +609,14 @@
 /* End XCConfigurationList section */
 
 /* Begin XCRemoteSwiftPackageReference section */
+		47047B2E2CF64112005F40B3 /* XCRemoteSwiftPackageReference "maplibre-gl-native-distribution" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/maplibre/maplibre-gl-native-distribution";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 6.8.1;
+			};
+		};
 		471BD2262CE9240F00C8F75A /* XCRemoteSwiftPackageReference "supabase-swift" */ = {
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/supabase-community/supabase-swift";
@@ -624,6 +636,11 @@
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
+		47047B2F2CF64112005F40B3 /* MapLibre */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 47047B2E2CF64112005F40B3 /* XCRemoteSwiftPackageReference "maplibre-gl-native-distribution" */;
+			productName = MapLibre;
+		};
 		471BD2272CE9240F00C8F75A /* Auth */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = 471BD2262CE9240F00C8F75A /* XCRemoteSwiftPackageReference "supabase-swift" */;

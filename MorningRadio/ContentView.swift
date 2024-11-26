@@ -48,16 +48,14 @@ struct ContentView: View {
             do {
                 let rawResponse = try await SupabaseManager.shared.client
                     .from("scraps")
-                    .select("id, content, summary, metadata")
+                    .select("id, content, summary, metadata, screenshot_url, latitude, longitude")
                     .order("created_at", ascending: false)
                     .limit(64)
                     .execute()
 
-                let data = rawResponse.data
-
                 let decoder = JSONDecoder()
-                decoder.keyDecodingStrategy = .convertFromSnakeCase
-                let decodedScraps = try decoder.decode([Scrap].self, from: data)
+                decoder.keyDecodingStrategy = .convertFromSnakeCase  // This handles the conversion
+                let decodedScraps = try decoder.decode([Scrap].self, from: rawResponse.data)
 
                 DispatchQueue.main.async {
                     withAnimation {
@@ -66,6 +64,7 @@ struct ContentView: View {
                     }
                 }
             } catch {
+                print("Fetch error: \(error)")
                 DispatchQueue.main.async {
                     withAnimation {
                         self.isLoading = false

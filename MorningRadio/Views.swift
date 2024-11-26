@@ -215,11 +215,13 @@ struct ScrapView: View {
     @State private var uiImage: UIImage?
     @State private var isAppearing = false
     
+    
     var body: some View {
         VStack {
             Spacer()
             VStack(alignment: .leading, spacing: 16) {
-                Text(try! AttributedString(markdown: scrap.content))
+                // Sanitize HTML content
+                Text(scrap.content.sanitizedHTML())
                     .font(.system(size: 28, weight: .medium, design: .rounded))
                     .foregroundColor(.white)
                     .shadow(color: .black.opacity(0.3), radius: 3, x: 0, y: 2)
@@ -229,7 +231,6 @@ struct ScrapView: View {
                     .offset(y: isAppearing ? 0 : 20)
             }
             .padding(24)
-            .background(.ultraThinMaterial.opacity(0.7))
             .cornerRadius(24)
             .padding(.horizontal, 20)
             .padding(.bottom, 40)
@@ -280,34 +281,37 @@ struct ScrapView: View {
     
     private func loadImage() {
         guard uiImage == nil else { return }
-        guard let metadata = scrap.metadata else { return }
         
-        if let base64String = metadata.base64Image {
+        print("Starting loadImage for scrap: \(scrap.id)")
+        print("Screenshot URL: \(String(describing: scrap.screenshotUrl))")
+        
+        
+        // Try loading from screenshot_url
+        if let urlString = scrap.screenshotUrl,
+           let url = URL(string: urlString) {
+            print("Attempting to load from URL: \(url)")
             DispatchQueue.global(qos: .userInitiated).async {
-                if let imageData = Data(base64Encoded: base64String),
-                   let image = UIImage(data: imageData) {
-                    DispatchQueue.main.async {
-                        withAnimation(.easeIn(duration: 0.3)) {
-                            uiImage = image
+                do {
+                    let data = try Data(contentsOf: url)
+                    if let image = UIImage(data: data) {
+                        DispatchQueue.main.async {
+                            withAnimation(.easeIn(duration: 0.3)) {
+                                self.uiImage = image
+                            }
                         }
+                        print("Successfully loaded image for \(scrap.id)")
                     }
+                } catch {
+                    print("Failed to load image: \(error)")
                 }
             }
-        } else if let screenshotUrlString = metadata.screenshotUrl,
-                  let url = URL(string: screenshotUrlString) {
-            DispatchQueue.global(qos: .userInitiated).async {
-                if let data = try? Data(contentsOf: url),
-                   let image = UIImage(data: data) {
-                    DispatchQueue.main.async {
-                        withAnimation(.easeIn(duration: 0.3)) {
-                            uiImage = image
-                        }
-                    }
-                }
-            }
+        } else {
+            print("No screenshot_url available for scrap: \(scrap.id)")
         }
     }
+
 }
+
 
 
 
