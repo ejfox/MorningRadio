@@ -6,7 +6,7 @@ struct MapView: View {
     let longitude: Double
     let zoomLevel: Double
     
-    init(latitude: Double, longitude: Double, zoomLevel: Double = 13.0) {
+    init(latitude: Double, longitude: Double, zoomLevel: Double = 8) {
         self.latitude = latitude
         self.longitude = longitude
         self.zoomLevel = zoomLevel

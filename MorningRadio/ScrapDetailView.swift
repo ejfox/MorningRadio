@@ -38,11 +38,12 @@ struct ScrapDetailView: View {
     private let springAnimation = Animation.spring(response: 0.3, dampingFraction: 0.7)
     
     // MARK: - Helper Functions
-    /// Splits text into bullet points and cleans up whitespace
+
+    /// Splits text by newlines and cleans up whitespace
     private func formatBulletPoints(_ text: String) -> [String] {
-        return text.components(separatedBy: "•")
-            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-            .filter { !$0.isEmpty }
+        return text.components(separatedBy: .newlines) // Split by newlines
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) } // Remove extra spaces
+            .filter { !$0.isEmpty } // Exclude empty lines
     }
     
     /// Navigates to the next or previous fact with haptic feedback

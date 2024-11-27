@@ -10,6 +10,7 @@ import Foundation
 struct Scrap: Identifiable, Decodable {
     let id: UUID
     let content: String
+    let title: String?
     let summary: String?
     let metadata: Metadata?
     let screenshotUrl: String?  // Consistently camelCase
