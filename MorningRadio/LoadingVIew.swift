@@ -2,258 +2,247 @@ import SwiftUI
 import Combine
 
 struct LoadingView: View {
-    @State private var orbitAngle: Double = 0.0
-    @State private var opacity: Double = 0.0
-    @State private var loadingText: [String] = Array(repeating: "", count: 13) //
-    @State private var hudValues: [Double] = Array(repeating: 0, count: 5)
-    @State private var subtleOffset: CGSize = .zero
+    // MARK: - State
+    @State private var progressValue: Double = 0
     @State private var isInitialLoad: Bool = true
+    @State private var minimumLoadingTimeElapsed = false
+    @State private var currentTitleIndex: Int = 0
+    @State private var showTitles: Bool = false
     
-    private let orbitDuration: Double = 10.0 // Slower animation for smoothness
-    private let circleSize: CGFloat = 200
-    private let orbitRadius: CGFloat = 60
-    private let word = "MORNING RADIO"
-    private let timer = Timer.publish(every: 0.05, on: .main, in: .common).autoconnect()
-    private let subtleAnimation = Animation.easeInOut(duration: 5.0).repeatForever(autoreverses: true)
-    
-    // Date Formatter
-    private var currentDate: String {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "EEEE, MMM d" // Example: Tuesday, Sep 14
-        return formatter.string(from: Date())
+    // MARK: - Properties
+    var scraps: [Scrap] = [] {
+        didSet {
+            if !scraps.isEmpty {
+                startTitleScrolling()
+            }
+        }
     }
+    
+    // MARK: - Constants
+    private let loadingDuration: Double = 2.0
+    private let titleScrollDuration: Double = 0.15  // Duration per title
     
     var body: some View {
         GeometryReader { geometry in
             ZStack {
-
+                // Background
+                Color.white
+                    .ignoresSafeArea()
                 
                 VStack(spacing: 40) {
+                    // Title
+                    Text("MORNING RADIO")
+                        .font(.system(size: 16, weight: .medium, design: .monospaced))
+                        .opacity(0.8)
                     
-                    // HUD Elements with Subtle Movement
-                    HStack(spacing: 90) {
-                        // Simplified Bar Charts
-                        HUDBarChart(hudValues: hudValues)
-                            .offset(subtleOffset)
-                            .animation(subtleAnimation, value: subtleOffset)
-                            .opacity(isInitialLoad ? 0 : 1)
-                            .animation(.easeInOut(duration: 1.0).delay(0.7), value: isInitialLoad)
-                        
-                        // Loading Text
-                        LoadingTextView(
-                            loadingText: loadingText,
-                            opacity: opacity
-                        )
-                        .offset(subtleOffset)
-                        .animation(subtleAnimation, value: subtleOffset)
-                        .opacity(isInitialLoad ? 0 : 1)
-                        .animation(.easeInOut(duration: 1.0).delay(0.7), value: isInitialLoad)
-                        
+                    // Date
+                    Text(Date().formatted(.dateTime.weekday().month().day()))
+                        .font(.system(size: 12, weight: .regular, design: .monospaced))
+                        .opacity(0.6)
+                    
+                    // Scrolling Titles
+                    if showTitles && !scraps.isEmpty {
+                        Text(truncateTitle(scraps[currentTitleIndex].content))
+                            .font(.system(size: 10, weight: .regular, design: .monospaced))
+                            .opacity(0.4)
+                            .lineLimit(1)
+                            .transition(.move(edge: .trailing))
+                            .id(currentTitleIndex)  // Force view update
                     }
-                    .padding(.horizontal)
                 }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
                 
-                // Metadata Elements as Border Text
+                // Border Text
                 BorderTextView(
-                    topText: currentDate,
-                    bottomText: "Morning Radio",
+                    topText: "MORNING",
+                    bottomText: "LOADING",
                     leftText: "YOU ARE WHAT YOU EAT",
-                    rightText: "LIVE IN UNCERTAINTY AND EAT THE CONSEQUENCES"
+                    rightText: "LIVE IN UNCERTAINTY"
                 )
-                .frame(width: geometry.size.width, height: geometry.size.height)
-                .opacity(isInitialLoad ? 0 : 1)
-                .animation(.easeInOut(duration: 1.0).delay(0.9), value: isInitialLoad)
-            }
-            .onAppear {
-                // Start with white screen
-                isInitialLoad = true
+                .font(.system(size: 10, weight: .regular, design: .monospaced))
+                .opacity(0.3)
                 
-                // Sequence the reveal
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
-                    withAnimation(Animation.timingCurve(0.25, 0.1, 0.25, 1.0, duration: 2.5)) {
-                        isInitialLoad = false
-                        opacity = 1
-                    }
-                    
-                    // Start Orbit Animation
-                    orbitAngle = 360
-                    
-                    // Start Subtle Movement Animation
-                    subtleOffset = CGSize(width: 32, height: 32)
-                    
-                    // Animate Loading Text
-                    animateText()
-                }
+                // Edge Tracing Line
+                ScreenEdgeShape()
+                    .trim(from: 0, to: progressValue)
+                    .stroke(Color.red, lineWidth: 2)
+                    .opacity(1.0)
+                    .animation(.linear(duration: loadingDuration), value: progressValue)
             }
-            .onReceive(timer) { _ in
-                updateHUDValues()
-            }
+        }
+        .ignoresSafeArea()
+        .onAppear {
+            startAnimations()
         }
     }
     
     // MARK: - Helper Functions
+    private func truncateTitle(_ title: String) -> String {
+        let cleaned = title.sanitizedHTML()
+        let maxLength = 24
+        if cleaned.count > maxLength {
+            let index = cleaned.index(cleaned.startIndex, offsetBy: maxLength)
+            return String(cleaned[..<index]) + "..."
+        }
+        return cleaned
+    }
     
-    private func animateText() {
-        for (index, _) in word.enumerated() {
-            DispatchQueue.main.asyncAfter(deadline: .now() + Double(index) * 0.4) {
-                if index < loadingText.count {
-                    let char = word[word.index(word.startIndex, offsetBy: index)]
-                    loadingText[index] = String(char)
-                }
+    private func startTitleScrolling() {
+        showTitles = true
+        animateNextTitle()
+    }
+    
+    private func animateNextTitle() {
+        guard !scraps.isEmpty else { return }
+        
+        withAnimation(.easeInOut(duration: titleScrollDuration)) {
+            currentTitleIndex = (currentTitleIndex + 1) % scraps.count
+        }
+        
+        // Schedule next title change
+        DispatchQueue.main.asyncAfter(deadline: .now() + titleScrollDuration) {
+            if !minimumLoadingTimeElapsed {
+                animateNextTitle()
             }
         }
     }
     
-    private func updateHUDValues() {
-        for i in 0..<hudValues.count {
-            hudValues[i] = Double.random(in: 0.3...1.0)
+    // MARK: - Animation Control
+    private func startAnimations() {
+        // Reset all states
+        isInitialLoad = true
+        progressValue = 0
+        minimumLoadingTimeElapsed = false
+        
+        // Start the edge line animation
+        withAnimation(.linear(duration: loadingDuration)) {
+            progressValue = 1.0
         }
-    }
-}
-
-// MARK: - Subviews
-
-struct OrbitalCircle: View {
-    var orbitAngle: Double
-    var orbitRadius: CGFloat
-    var circleSize: CGFloat
-    var color: Color
-    
-    var body: some View {
-        Circle()
-            .stroke(color, lineWidth: 2)
-            .frame(width: circleSize, height: circleSize)
-            .offset(
-                x: cos(Angle(degrees: orbitAngle).radians) * orbitRadius,
-                y: sin(Angle(degrees: orbitAngle).radians) * orbitRadius
-            )
-    }
-}
-
-struct CentralAccentCircle: View {
-    var orbitAngle: Double
-    var orbitRadius: CGFloat
-    var size: CGFloat
-    var color: Color
-    
-    var body: some View {
-        Circle()
-            .fill(color)
-            .frame(width: size, height: size)
-            .shadow(color: color.opacity(0.6), radius: 4, x: 0, y: 0)
-            .offset(
-                x: cos(Angle(degrees: orbitAngle).radians) * orbitRadius,
-                y: sin(Angle(degrees: orbitAngle).radians) * orbitRadius
-            )
-    }
-}
-
-struct HUDBarChart: View {
-    var hudValues: [Double]
-    
-    var body: some View {
-        HStack(spacing: 10) {
-            ForEach(0..<hudValues.count, id: \.self) { index in
-                VStack(spacing: 3) {
-                    ForEach(0..<10, id: \.self) { barIndex in
-                        Rectangle()
-                            .fill(barIndex < Int(hudValues[index] * 10) ? Color.black : Color.black.opacity(0.1))
-                            .frame(width: 6, height: 6)
-                            .animation(.easeInOut(duration: 0.95), value: hudValues[index])
-                    }
-                }
+        
+        // Set minimum loading time completion
+        DispatchQueue.main.asyncAfter(deadline: .now() + loadingDuration) {
+            withAnimation {
+                minimumLoadingTimeElapsed = true
+                isInitialLoad = false
             }
         }
     }
+    
+    var shouldDismissLoading: Bool {
+        progressValue >= 1.0 && minimumLoadingTimeElapsed
+    }
 }
 
-struct LoadingTextView: View {
-    var loadingText: [String]
-    var opacity: Double
-    
-    var body: some View {
-        VStack(alignment: .leading, spacing: 5) {
-            ForEach(0..<loadingText.count, id: \.self) { index in
-                Text(loadingText[index])
-                    .font(.system(size: 24, weight: .bold, design: .monospaced))
-                    .foregroundColor(.black)
-                    .opacity(opacity)
-                    .animation(.easeInOut(duration: 1.0), value: opacity)
-            }
+// Add this new shape struct at the bottom of LoadingView.swift
+struct ScreenEdgeShape: Shape {
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        
+        // Get actual device corner radius
+        let cornerRadius: CGFloat = 47  // iPhone 14/15 Pro corner radius
+        let padding: CGFloat = 0  // Remove padding to go right to the edge
+        
+        let innerRect = CGRect(
+            x: padding,
+            y: padding,
+            width: rect.width - (padding * 2),
+            height: rect.height - (padding * 2)
+        )
+        
+        // Start from top-left and trace clockwise
+        path.move(to: CGPoint(x: innerRect.minX + cornerRadius, y: innerRect.minY))
+        
+        // Top edge
+        path.addLine(to: CGPoint(x: innerRect.maxX - cornerRadius, y: innerRect.minY))
+        
+        // Top-right corner
+        path.addArc(
+            center: CGPoint(x: innerRect.maxX - cornerRadius, y: innerRect.minY + cornerRadius),
+            radius: cornerRadius,
+            startAngle: Angle(degrees: -90),
+            endAngle: Angle(degrees: 0),
+            clockwise: false
+        )
+        
+        // Right edge
+        path.addLine(to: CGPoint(x: innerRect.maxX, y: innerRect.maxY - cornerRadius))
+        
+        // Bottom-right corner
+        path.addArc(
+            center: CGPoint(x: innerRect.maxX - cornerRadius, y: innerRect.maxY - cornerRadius),
+            radius: cornerRadius,
+            startAngle: Angle(degrees: 0),
+            endAngle: Angle(degrees: 90),
+            clockwise: false
+        )
+        
+        // Bottom edge
+        path.addLine(to: CGPoint(x: innerRect.minX + cornerRadius, y: innerRect.maxY))
+        
+        // Bottom-left corner
+        path.addArc(
+            center: CGPoint(x: innerRect.minX + cornerRadius, y: innerRect.maxY - cornerRadius),
+            radius: cornerRadius,
+            startAngle: Angle(degrees: 90),
+            endAngle: Angle(degrees: 180),
+            clockwise: false
+        )
+        
+        // Left edge
+        path.addLine(to: CGPoint(x: innerRect.minX, y: innerRect.minY + cornerRadius))
+        
+        // Top-left corner
+        path.addArc(
+            center: CGPoint(x: innerRect.minX + cornerRadius, y: innerRect.minY + cornerRadius),
+            radius: cornerRadius,
+            startAngle: Angle(degrees: 180),
+            endAngle: Angle(degrees: 270),
+            clockwise: false
+        )
+        
+        return path
+    }
+}
+
+// Add this extension to get the device's corner radius
+extension UIScreen {
+    var displayCornerRadius: CGFloat {
+        let key = "_displayCornerRadius"
+        if let cornerRadius = value(forKey: key) as? CGFloat {
+            return cornerRadius
         }
+        return 39 // Default iPhone corner radius if we can't get the actual value
     }
 }
 
-struct AccentIndicator: View {
-    var opacity: Double
-    
-    var body: some View {
-        Circle()
-            .fill(Color.red)
-            .frame(width: 15, height: 15)
-            .scaleEffect(opacity == 1 ? 1.0 : 0.5)
-            .shadow(color: Color.red.opacity(0.6), radius: 4, x: 0, y: 0)
-            .animation(
-                Animation.timingCurve(0.25, 0.1, 0.25, 1.0, duration: 1.0)
-                    .repeatForever(autoreverses: true),
-                value: opacity
-            )
-    }
-}
-
+// Add BorderTextView struct:
 struct BorderTextView: View {
-    var topText: String
-    var bottomText: String
-    var leftText: String
-    var rightText: String
+    let topText: String
+    let bottomText: String
+    let leftText: String
+    let rightText: String
     
     var body: some View {
         GeometryReader { geometry in
             ZStack {
-                // Top Border Text
-                HStack {
-                    Spacer()
-                    Text(topText)
-                        .font(.system(size: 10, weight: .regular, design: .monospaced))
-                        .foregroundColor(.black.opacity(0.6))
-                        .rotationEffect(.degrees(0))
-                    Spacer()
-                }
-                .position(x: geometry.size.width / 2, y: 10)
+                // Top Text
+                Text(topText)
+                    .rotationEffect(.degrees(0))
+                    .position(x: geometry.size.width/2, y: 20)
                 
-                // Bottom Border Text
-                HStack {
-                    Spacer()
-                    Text(bottomText)
-                        .font(.system(size: 10, weight: .regular, design: .monospaced))
-                        .foregroundColor(.black.opacity(0.6))
-                        .rotationEffect(.degrees(0))
-                    Spacer()
-                }
-                .position(x: geometry.size.width / 2, y: geometry.size.height - 10)
+                // Bottom Text
+                Text(bottomText)
+                    .rotationEffect(.degrees(0))
+                    .position(x: geometry.size.width/2, y: geometry.size.height - 20)
                 
-                // Left Border Text
-                VStack {
-                    Spacer()
-                    Text(leftText)
-                        .font(.system(size: 10, weight: .regular, design: .monospaced))
-                        .foregroundColor(.black.opacity(0.6))
-                        .rotationEffect(.degrees(-90))
-                    Spacer()
-                }
-                .position(x: 10, y: geometry.size.height / 2)
+                // Left Text
+                Text(leftText)
+                    .rotationEffect(.degrees(-90))
+                    .position(x: 20, y: geometry.size.height/2)
                 
-                // Right Border Text
-                VStack {
-                    Spacer()
-                    Text(rightText)
-                        .font(.system(size: 10, weight: .regular, design: .monospaced))
-                        .foregroundColor(.black.opacity(0.6))
-                        .rotationEffect(.degrees(90))
-                    Spacer()
-                }
-                .position(x: geometry.size.width - 10, y: geometry.size.height / 2)
+                // Right Text
+                Text(rightText)
+                    .rotationEffect(.degrees(90))
+                    .position(x: geometry.size.width - 20, y: geometry.size.height/2)
             }
         }
     }

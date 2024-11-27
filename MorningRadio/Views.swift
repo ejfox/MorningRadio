@@ -6,7 +6,7 @@
 //
 
 import SwiftUI
-import UIKit
+import Foundation
 
 extension CGFloat {
     var degrees: Angle {
@@ -80,6 +80,13 @@ struct VerticalPagingView: View {
         return (finalOffset, scale, rotation, opacity)
     }
     
+    private let visibleRange = 1 // How many views to keep loaded before/after current
+    private var visibleIndices: Range<Int> {
+        let start = max(0, currentIndex - visibleRange)
+        let end = min(scraps.count, currentIndex + visibleRange + 1)
+        return start..<end
+    }
+    
     var body: some View {
         GeometryReader { geometry in
             ZStack {
@@ -97,52 +104,55 @@ struct VerticalPagingView: View {
                 
                 // Scrap cards
                 ForEach(scraps.indices, id: \.self) { index in
-                    let transforms = calculateTransforms(for: index, geometry: geometry)
-                    
-                    ScrapView(
-                        scrap: scraps[index],
-                        selectedScrap: $selectedScrap,
-                        selectedImage: $selectedImage
-                    )
-                    .frame(width: geometry.size.width, height: geometry.size.height)
-                    .offset(y: transforms.offset)
-                    .scaleEffect(transforms.scale)
-                    .rotation3DEffect(
-                        transforms.rotation,
-                        axis: (x: 0, y: 1, z: 0),
-                        anchor: .center,
-                        anchorZ: 0,
-                        perspective: 1
-                    )
-                    .opacity(transforms.opacity)
-                    // Add subtle shadow animation
-                    .shadow(
-                        color: .black.opacity(0.2),
-                        radius: 20 * (1 - abs(CGFloat(index - currentIndex)) * 0.5),
-                        x: 0,
-                        y: 10
-                    )
-                    // Add subtle blur based on movement
-                    .blur(radius: abs(dragOffset) / 200)
-                    // Custom spring animation for each property
-                    .animation(
-                        .interpolatingSpring(
-                            mass: 1.0,
-                            stiffness: 100,
-                            damping: 20,
-                            initialVelocity: velocityY / 1000
-                        ),
-                        value: currentIndex
-                    )
-                    // Separate animation for drag
-                    .animation(
-                        .interactiveSpring(
-                            response: 0.3,
-                            dampingFraction: 0.7,
-                            blendDuration: 0.1
-                        ),
-                        value: dragOffset
-                    )
+                    if visibleIndices.contains(index) {
+                        let transforms = calculateTransforms(for: index, geometry: geometry)
+                        
+                        ScrapView(
+                            scrap: scraps[index],
+                            selectedScrap: $selectedScrap,
+                            selectedImage: $selectedImage
+                        )
+                        .frame(width: geometry.size.width, height: geometry.size.height)
+                        .clipped()
+                        .offset(y: transforms.offset)
+                        .scaleEffect(transforms.scale)
+                        .rotation3DEffect(
+                            transforms.rotation,
+                            axis: (x: 0, y: 1, z: 0),
+                            anchor: .center,
+                            anchorZ: 0,
+                            perspective: 1
+                        )
+                        .opacity(transforms.opacity)
+                        // Add subtle shadow animation
+                        .shadow(
+                            color: .black.opacity(0.2),
+                            radius: 20 * (1 - abs(CGFloat(index - currentIndex)) * 0.5),
+                            x: 0,
+                            y: 10
+                        )
+                        // Add subtle blur based on movement
+                        .blur(radius: abs(dragOffset) / 200)
+                        // Custom spring animation for each property
+                        .animation(
+                            .interpolatingSpring(
+                                mass: 1.0,
+                                stiffness: 100,
+                                damping: 20,
+                                initialVelocity: velocityY / 1000
+                            ),
+                            value: currentIndex
+                        )
+                        // Separate animation for drag
+                        .animation(
+                            .interactiveSpring(
+                                response: 0.3,
+                                dampingFraction: 0.7,
+                                blendDuration: 0.1
+                            ),
+                            value: dragOffset
+                        )
+                    }
                 }
             }
             .gesture(
@@ -214,6 +224,7 @@ struct ScrapView: View {
     @Binding var selectedImage: UIImage?
     @State private var uiImage: UIImage?
     @State private var isAppearing = false
+    @State private var isImageLoading = true
     
     
     var body: some View {
@@ -238,25 +249,33 @@ struct ScrapView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(
-            Group {
+            ZStack {
                 if let image = uiImage {
-                    Image(uiImage: image)
-                        .resizable()
-                        .scaledToFill()
-                        .overlay(
-                            LinearGradient(
-                                colors: [
-                                    .black.opacity(0.2),
-                                    .black.opacity(0.7)
-                                ],
-                                startPoint: .top,
-                                endPoint: .bottom
+                    GeometryReader { geo in
+                        Image(uiImage: image)
+                            .resizable()
+                            .aspectRatio(contentMode: .fill)
+                            .frame(
+                                width: geo.size.width, 
+                                height: geo.size.height
                             )
-                        )
-                        .clipped()
-                        .opacity(isAppearing ? 1 : 0)
+                            .clipped()
+                            .overlay(
+                                LinearGradient(
+                                    colors: [
+                                        .black.opacity(0.2),
+                                        .black.opacity(0.7)
+                                    ],
+                                    startPoint: .top,
+                                    endPoint: .bottom
+                                )
+                            )
+                            .opacity(isAppearing ? 1 : 0)
+                    }
                 }
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .clipped()
             .ignoresSafeArea()
         )
         .onAppear {
@@ -267,6 +286,7 @@ struct ScrapView: View {
         }
         .onDisappear {
             isAppearing = false
+            uiImage = nil
         }
         .onTapGesture {
             let impact = UIImpactFeedbackGenerator(style: .soft)
@@ -282,14 +302,10 @@ struct ScrapView: View {
     private func loadImage() {
         guard uiImage == nil else { return }
         
-        print("Starting loadImage for scrap: \(scrap.id)")
-        print("Screenshot URL: \(String(describing: scrap.screenshotUrl))")
+        isImageLoading = true
         
-        
-        // Try loading from screenshot_url
         if let urlString = scrap.screenshotUrl,
            let url = URL(string: urlString) {
-            print("Attempting to load from URL: \(url)")
             DispatchQueue.global(qos: .userInitiated).async {
                 do {
                     let data = try Data(contentsOf: url)
@@ -297,16 +313,19 @@ struct ScrapView: View {
                         DispatchQueue.main.async {
                             withAnimation(.easeIn(duration: 0.3)) {
                                 self.uiImage = image
+                                self.isImageLoading = false
                             }
                         }
-                        print("Successfully loaded image for \(scrap.id)")
                     }
                 } catch {
+                    DispatchQueue.main.async {
+                        self.isImageLoading = false
+                    }
                     print("Failed to load image: \(error)")
                 }
             }
         } else {
-            print("No screenshot_url available for scrap: \(scrap.id)")
+            isImageLoading = false
         }
     }
 

@@ -1,7 +1,11 @@
 import SwiftUI
 import CoreData
 import Foundation
-import MapLibre
+
+#if os(iOS)
+import UIKit
+#endif
+
 
 /// A detailed view for displaying a scrap's content, summary facts, location, and metadata
 /// Features:
@@ -22,6 +26,10 @@ struct ScrapDetailView: View {
     @State private var isAppearing = false
     @State private var currentFactIndex = 0
     @Environment(\.colorScheme) private var colorScheme
+    @State private var showAllFacts: Bool = false
+    @State private var dragOffset: CGFloat = 0
+    @State private var dragVelocity: CGFloat = 0
+    @GestureState private var isDragging = false
     
     // MARK: - Constants
     private let navigationBarHeight: CGFloat = 0.08 // 8% of screen height
@@ -41,9 +49,22 @@ struct ScrapDetailView: View {
 
     /// Splits text by newlines and cleans up whitespace
     private func formatBulletPoints(_ text: String) -> [String] {
-        return text.components(separatedBy: .newlines) // Split by newlines
-            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) } // Remove extra spaces
-            .filter { !$0.isEmpty } // Exclude empty lines
+        var facts = text.components(separatedBy: .newlines)
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+        
+        // Add map if we have valid location
+        if hasValidLocation {
+            facts.append("MAP_VIEW_PLACEHOLDER")
+        }
+        
+        // Add metadata if we have any
+        if let metadata = scrap.metadata,
+           !metadata.displayableProperties().isEmpty {
+            facts.append("METADATA_VIEW_PLACEHOLDER")
+        }
+        
+        return facts
     }
     
     /// Navigates to the next or previous fact with haptic feedback
@@ -63,6 +84,9 @@ struct ScrapDetailView: View {
     // MARK: - View Body
     var body: some View {
         GeometryReader { geometry in
+            // Extract facts processing to a computed property
+            let facts = processFacts(from: scrap.summary)
+            
             ZStack(alignment: .bottom) {
                 // Background
                 backgroundColor
@@ -70,134 +94,31 @@ struct ScrapDetailView: View {
                 // Main Content
                 ScrollView(.vertical, showsIndicators: false) {
                     VStack(alignment: .leading, spacing: verticalSpacing) {
-                        // Title
-                        Text(scrap.content.sanitizedHTML())
-                            .font(.system(size: 32, weight: .bold, design: .rounded))
-                            .foregroundColor(textColor)
-                            .multilineTextAlignment(.leading)
-                            .padding(.top, geometry.size.height * navigationBarHeight)
-                            .frame(maxWidth: geometry.size.width - (horizontalPadding * 2), alignment: .leading)
-                            .opacity(isAppearing ? 1 : 0)
-                            .offset(y: isAppearing ? 0 : 30)
+                        // Title section
+                        if shouldShowTitle(for: facts) {
+                            titleSection(geometry: geometry)
+                        }
                         
                         // Facts Content Area
-                        if let summary = scrap.summary {
-                            let facts = formatBulletPoints(summary.sanitizedHTML())
-                            
-                            if !facts.isEmpty {
-                                // Current Fact
-                                Text(facts[currentFactIndex])
-                                    .font(.system(size: 18, weight: .regular, design: .rounded))
-                                    .foregroundColor(textColor.opacity(0.8))
-                                    .multilineTextAlignment(.leading)
-                                    .transition(.asymmetric(
-                                        insertion: .move(edge: .trailing).combined(with: .opacity),
-                                        removal: .move(edge: .leading).combined(with: .opacity)
-                                    ))
-                                    .id(currentFactIndex)
-                                    .padding(.bottom, verticalSpacing)
-                                    .frame(minHeight: 100) // Prevent layout shift
-                            }
+                        if !facts.isEmpty {
+                            factContent(facts: facts, geometry: geometry)
                         }
                         
-                        // Map (when coordinates available)
-                        if let latitude = scrap.latitude,
-                           let longitude = scrap.longitude {
-                            MapView(
-                                latitude: latitude,
-                                longitude: longitude,
-                                zoomLevel: 13
-                            )
-                            .frame(height: mapHeight)
-                            .opacity(isAppearing ? 1 : 0)
-                            .offset(y: isAppearing ? 0 : 20)
-                        }
+                        // Metadata section
+                        metadataSection
                         
-                        // Metadata
-                        if let metadataDictionary = metadataAsDictionary(scrap.metadata) {
-                            ScrapMetadataView(metadata: metadataDictionary)
-                                .opacity(isAppearing ? 1 : 0)
-                                .offset(y: isAppearing ? 0 : 50)
-                        }
-                        
-                        Spacer(minLength: 120) // Space for bottom controls
+                        Spacer(minLength: 120)
                     }
-                    .padding(.horizontal, horizontalPadding)
                 }
                 .frame(width: geometry.size.width)
                 
-                // Bottom Controls Area with Share Button
-                VStack {
-                    Spacer()
-                    
-                    // Navigation Controls
-                    if let summary = scrap.summary {
-                        let facts = formatBulletPoints(summary.sanitizedHTML())
-                        if !facts.isEmpty {
-                            HStack {
-                                // Previous Button with large touch target
-                                Button(action: { navigateFacts(forward: false, totalCount: facts.count) }) {
-                                    HStack {
-                                        Color.clear
-                                            .frame(width: geometry.size.width * 0.3, height: carouselButtonSize)
-                                            .overlay(
-                                                Image(systemName: "chevron.left")
-                                                    .font(.system(size: 20))
-                                                    .foregroundColor(textColor.opacity(0.6))
-                                            )
-                                    }
-                                }
-                                
-                                Spacer()
-                                
-                                // Progress Indicators
-                                HStack(spacing: 6) {
-                                    ForEach(0..<facts.count, id: \.self) { index in
-                                        Circle()
-                                            .fill(index == currentFactIndex ? textColor : textColor.opacity(0.2))
-                                            .frame(width: 4, height: 4)
-                                    }
-                                }
-                                
-                                Spacer()
-                                
-                                // Next Button with large touch target
-                                Button(action: { navigateFacts(forward: true, totalCount: facts.count) }) {
-                                    HStack {
-                                        Color.clear
-                                            .frame(width: geometry.size.width * 0.3, height: carouselButtonSize)
-                                            .overlay(
-                                                Image(systemName: "chevron.right")
-                                                    .font(.system(size: 20))
-                                                    .foregroundColor(textColor.opacity(0.6))
-                                            )
-                                    }
-                                }
-                            }
-                            .padding(.horizontal, horizontalPadding)
-                            .padding(.bottom, 8) // Small gap above safe area
-                        }
-                    }
-                    
-                    // Share Button
-                    HStack {
-                        Spacer()
-                        Button(action: {
-                            let impact = UIImpactFeedbackGenerator(style: .soft)
-                            impact.impactOccurred(intensity: 0.7)
-                            withAnimation(springAnimation) {
-                                showShareSheet = true
-                            }
-                        }) {
-                            Image(systemName: "square.and.arrow.up")
-                                .font(.system(size: 20))
-                                .foregroundColor(textColor.opacity(0.6))
-                                .frame(width: 44, height: 44)
-                        }
-                        .padding(.trailing, max(horizontalPadding, geometry.safeAreaInsets.trailing + 16))
-                    }
-                    .padding(.bottom, geometry.safeAreaInsets.bottom)
+                // All Facts Overlay
+                if showAllFacts {
+                    factsOverlay(facts: facts)
                 }
+                
+                // Bottom Controls
+                bottomControls(facts: facts, geometry: geometry)
             }
             .frame(width: geometry.size.width, height: geometry.size.height)
             .sheet(isPresented: $showShareSheet) {
@@ -208,6 +129,39 @@ struct ScrapDetailView: View {
                     ShareSheet(items: [scrap.content.sanitizedHTML()])
                 }
             }
+            .gesture(
+                DragGesture()
+                    .updating($isDragging) { value, state, _ in
+                        state = true
+                    }
+                    .onChanged { value in
+                        // Only allow downward dragging
+                        let translation = value.translation.height
+                        if translation > 0 {
+                            dragOffset = translation
+                            // Use the built-in velocity property
+                            dragVelocity = value.predictedEndTranslation.height - value.translation.height
+                        }
+                    }
+                    .onEnded { value in
+                        let translation = value.translation.height
+                        let velocity = value.predictedEndTranslation.height - value.translation.height
+                        
+                        // Dismiss if dragged down more than 20% of screen height or with sufficient velocity
+                        if translation > UIScreen.main.bounds.height * 0.2 || velocity > 500 {
+                            withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                                dismissAction()
+                            }
+                        } else {
+                            // Reset if not dragged enough
+                            withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                                dragOffset = 0
+                            }
+                        }
+                    }
+            )
+            .offset(y: dragOffset)
+            .opacity(max(0, min(1, 1.0 - (dragOffset / (UIScreen.main.bounds.height / 2)))))
         }
         .ignoresSafeArea()
         .onAppear {
@@ -242,13 +196,229 @@ struct ScrapDetailView: View {
     private var backgroundColor: Color {
         colorScheme == .dark ?
             Color(red: 0.1, green: 0.1, blue: 0.2) :
-            Color.white
+            Color(red: 0.95, green: 0.95, blue: 0.97)
     }
     
     private var textColor: Color {
         colorScheme == .dark ?
             .white :
             .black
+    }
+    
+    // First, add a computed property to check for valid location
+    private var hasValidLocation: Bool {
+        guard let lat = scrap.latitude,
+              let lon = scrap.longitude else {
+            return false
+        }
+        // Basic validation that coordinates are reasonable
+        return lat != 0 && lon != 0
+    }
+    
+    // Helper functions to break up the complexity:
+    private func processFacts(from summary: String?) -> [String] {
+        guard let summary = summary else { return [] }
+        return formatBulletPoints(summary.sanitizedHTML())
+    }
+    
+    private func shouldShowTitle(for facts: [String]) -> Bool {
+        !facts.isEmpty && facts[currentFactIndex] != "MAP_VIEW_PLACEHOLDER"
+    }
+    
+    private func titleSection(geometry: GeometryProxy) -> some View {
+        Text(scrap.content.sanitizedHTML())
+            .font(.system(size: 32, weight: .bold, design: .rounded))
+            .foregroundColor(textColor)
+            .multilineTextAlignment(.leading)
+            .padding(.top, geometry.size.height * navigationBarHeight)
+            .frame(maxWidth: geometry.size.width - (horizontalPadding * 2), alignment: .leading)
+            .padding(.horizontal, horizontalPadding)
+            .opacity(isAppearing ? 1 : 0)
+            .offset(y: isAppearing ? 0 : 30)
+    }
+    
+    private func factContent(facts: [String], geometry: GeometryProxy) -> some View {
+        Group {
+            if facts[currentFactIndex] == "MAP_VIEW_PLACEHOLDER" {
+                mapView(geometry: geometry)
+            } else if facts[currentFactIndex] == "METADATA_VIEW_PLACEHOLDER" {
+                metadataView(geometry: geometry)
+            } else {
+                regularFactView(fact: facts[currentFactIndex], geometry: geometry)
+            }
+        }
+    }
+    
+    // Add other helper views...
+
+    private func mapView(geometry: GeometryProxy) -> some View {
+        MapView(
+            latitude: scrap.latitude!,
+            longitude: scrap.longitude!,
+            zoomLevel: 8,
+            startZoomLevel: 0
+        )
+        .frame(maxWidth: UIScreen.main.bounds.width)
+        .frame(height: UIScreen.main.bounds.height + geometry.safeAreaInsets.top + geometry.safeAreaInsets.bottom)
+        .edgesIgnoringSafeArea(.all)
+        .transition(.asymmetric(
+            insertion: .opacity,
+            removal: .opacity
+        ))
+    }
+
+    private func metadataView(geometry: GeometryProxy) -> some View {
+        if let metadataDictionary = metadataAsDictionary(scrap.metadata) {
+            return ScrapMetadataView(metadata: metadataDictionary)
+                .frame(maxWidth: .infinity)
+                .frame(height: geometry.size.height * 0.7)
+                .transition(.asymmetric(
+                    insertion: .move(edge: .trailing).combined(with: .opacity),
+                    removal: .move(edge: .leading).combined(with: .opacity)
+                ))
+                .eraseToAnyView()
+        } else {
+            return EmptyView().eraseToAnyView()
+        }
+    }
+
+    private func regularFactView(fact: String, geometry: GeometryProxy) -> some View {
+        VStack {
+            Text(fact)
+                .font(.system(
+                    size: fact.count > 200 ? 24 : 32,
+                    weight: .regular,
+                    design: .rounded
+                ))
+                .foregroundColor(textColor.opacity(0.9))
+                .multilineTextAlignment(.leading)
+                .padding(.horizontal, horizontalPadding)
+                .padding(.vertical, verticalSpacing)
+                .frame(
+                    maxWidth: .infinity,
+                    minHeight: geometry.size.height * 0.5,
+                    maxHeight: .infinity,
+                    alignment: .center
+                )
+        }
+        .transition(.asymmetric(
+            insertion: .move(edge: .trailing).combined(with: .opacity),
+            removal: .move(edge: .leading).combined(with: .opacity)
+        ))
+    }
+
+    private func factsOverlay(facts: [String]) -> some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 12) {
+                ForEach(Array(facts.enumerated()), id: \.offset) { index, fact in
+                    if fact != "MAP_VIEW_PLACEHOLDER" && fact != "METADATA_VIEW_PLACEHOLDER" {
+                        Text(fact)
+                            .font(.system(size: 14, weight: .regular, design: .rounded))
+                            .foregroundColor(textColor.opacity(0.8))
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 8)
+                            .background(
+                                RoundedRectangle(cornerRadius: 12)
+                                    .fill(colorScheme == .dark ? 
+                                        Color.white.opacity(0.1) : 
+                                        Color.black.opacity(0.05)
+                                    )
+                            )
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 12)
+                                    .strokeBorder(
+                                        index == currentFactIndex ? 
+                                            textColor.opacity(0.3) : 
+                                            Color.clear,
+                                        lineWidth: 1
+                                    )
+                            )
+                    }
+                }
+            }
+            .padding()
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(
+            BlurView(style: colorScheme == .dark ? .dark : .light)
+                .opacity(0.98)
+        )
+        .transition(.opacity)
+    }
+
+    private func bottomControls(facts: [String], geometry: GeometryProxy) -> some View {
+        VStack {
+            Spacer()
+            
+            // Navigation Controls
+            if !facts.isEmpty {
+                HStack {
+                    // Previous Button with large touch target
+                    Button(action: { navigateFacts(forward: false, totalCount: facts.count) }) {
+                        HStack {
+                            Color.clear
+                                .frame(width: geometry.size.width * 0.3, height: carouselButtonSize)
+                                .overlay(
+                                    Image(systemName: "chevron.left")
+                                        .font(.system(size: 20))
+                                        .foregroundColor(textColor.opacity(0.6))
+                                )
+                        }
+                    }
+                    
+                    Spacer()
+                    
+                    // Progress Indicators
+                    HStack(spacing: 6) {
+                        ForEach(0..<facts.count, id: \.self) { index in
+                            if facts[index] == "MAP_VIEW_PLACEHOLDER" {
+                                Image(systemName: "map.fill")
+                                    .font(.system(size: 8))
+                                    .foregroundColor(index == currentFactIndex ? textColor : textColor.opacity(0.2))
+                            } else if facts[index] == "METADATA_VIEW_PLACEHOLDER" {
+                                Image(systemName: "info.circle.fill")
+                                    .font(.system(size: 8))
+                                    .foregroundColor(index == currentFactIndex ? textColor : textColor.opacity(0.2))
+                            } else {
+                                Circle()
+                                    .fill(index == currentFactIndex ? textColor : textColor.opacity(0.2))
+                                    .frame(width: 4, height: 4)
+                            }
+                        }
+                    }
+                    
+                    Spacer()
+                    
+                    // Next Button with large touch target
+                    Button(action: { navigateFacts(forward: true, totalCount: facts.count) }) {
+                        HStack {
+                            Color.clear
+                                .frame(width: geometry.size.width * 0.3, height: carouselButtonSize)
+                                .overlay(
+                                    Image(systemName: "chevron.right")
+                                        .font(.system(size: 20))
+                                        .foregroundColor(textColor.opacity(0.6))
+                                )
+                        }
+                    }
+                }
+                .padding(.horizontal, horizontalPadding)
+                .padding(.bottom, 8)
+            }
+        }
+    }
+
+    // Add this computed property after the other helper views:
+
+    private var metadataSection: some View {
+        Group {
+            if let metadataDictionary = metadataAsDictionary(scrap.metadata),
+               !metadataDictionary.isEmpty {
+                ScrapMetadataView(metadata: metadataDictionary)
+                    .opacity(isAppearing ? 1 : 0)
+                    .offset(y: isAppearing ? 0 : 50)
+            }
+        }
     }
 }
 
@@ -279,5 +449,12 @@ extension String {
             print("HTML sanitization failed: \(error)")
             return cleanedString // Fallback to basic cleanup
         }
+    }
+}
+
+// Add this extension for type erasure
+extension View {
+    func eraseToAnyView() -> AnyView {
+        AnyView(self)
     }
 }

@@ -12,20 +12,23 @@ import Foundation
 struct ContentView: View {
     @State private var scraps: [Scrap] = []
     @State private var currentIndex: Int = 0
-    @State private var isLoading: Bool = true
     @State private var showError: Bool = false
     @State private var selectedScrap: Scrap? = nil
     @State private var selectedImage: UIImage? = nil
+    @State private var isLoading = true
 
     var body: some View {
         ZStack {
             if isLoading {
-                LoadingView()
+                LoadingView(scraps: scraps)
+                    .transition(.opacity)
             } else if showError {
                 ErrorView(retryAction: fetchScraps)
+                    .transition(.opacity)
             } else {
                 VerticalPagingView(scraps: scraps, selectedScrap: $selectedScrap, selectedImage: $selectedImage)
                     .edgesIgnoringSafeArea(.all)
+                    .transition(.opacity)
             }
 
             if let scrap = selectedScrap {
@@ -37,9 +40,10 @@ struct ContentView: View {
                 }
                 .transition(.move(edge: .bottom))
                 .zIndex(1)
-                .ignoresSafeArea()  // Add this
+                .ignoresSafeArea()
             }
         }
+        .animation(.easeInOut(duration: 0.3), value: isLoading)
         .onAppear(perform: fetchScraps)
     }
 
@@ -54,10 +58,10 @@ struct ContentView: View {
                     .execute()
 
                 let decoder = JSONDecoder()
-                decoder.keyDecodingStrategy = .convertFromSnakeCase  // This handles the conversion
+                decoder.keyDecodingStrategy = .convertFromSnakeCase
                 let decodedScraps = try decoder.decode([Scrap].self, from: rawResponse.data)
 
-                DispatchQueue.main.async {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
                     withAnimation {
                         self.scraps = decodedScraps
                         self.isLoading = false
@@ -66,10 +70,8 @@ struct ContentView: View {
             } catch {
                 print("Fetch error: \(error)")
                 DispatchQueue.main.async {
-                    withAnimation {
-                        self.isLoading = false
-                        self.showError = true
-                    }
+                    self.showError = true
+                    self.isLoading = false
                 }
             }
         }
