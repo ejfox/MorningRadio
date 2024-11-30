@@ -1,6 +1,15 @@
 {
-  "originHash" : "92bfb03c3a49d139a13ac485804860aff532eedbb1249eaf2478e2df8d6d9ee0",
+  "originHash" : "7297b963e98dbd8fbfe01f29d273e11f92c04d6417a3aeabdf9272d0bd87d5fa",
   "pins" : [
+    {
+      "identity" : "flowstacks",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/johnpatrickmorgan/FlowStacks.git",
+      "state" : {
+        "revision" : "0c2d1dcabcaf1a6b725f4a9d01796308d9b03db1",
+        "version" : "0.8.3"
+      }
+    },
     {
       "identity" : "inject",
       "kind" : "remoteSourceControl",
@@ -11,12 +20,21 @@
       }
     },
     {
-      "identity" : "maplibre-gl-native-distribution",
+      "identity" : "screencorners",
       "kind" : "remoteSourceControl",
-      "location" : "https://github.com/maplibre/maplibre-gl-native-distribution",
+      "location" : "https://github.com/kylebshr/ScreenCorners.git",
       "state" : {
-        "revision" : "b84a0decbe9ca1caeff1402efdce71349c09d790",
-        "version" : "6.8.1"
+        "branch" : "main",
+        "revision" : "bd5818daa7782b802722de00e2aea96a0bd01e7e"
+      }
+    },
+    {
+      "identity" : "shiny",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/maustinstar/shiny",
+      "state" : {
+        "branch" : "master",
+        "revision" : "862360b8ab6b9ea9eb1156569a30f154b22625a5"
       }
     },
     {
@@ -24,8 +42,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/supabase-community/supabase-swift",
       "state" : {
-        "revision" : "691bde7ca02fb70eed77d4750904fc9be45bd007",
-        "version" : "2.22.1"
+        "revision" : "c470e9d821550000d28f05f2457857b8f3813f62",
+        "version" : "2.23.0"
       }
     },
     {
@@ -51,8 +69,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/apple/swift-crypto.git",
       "state" : {
-        "revision" : "06dc63c6d8da54ee11ceb268cde1fa68161afc96",
-        "version" : "3.9.1"
+        "revision" : "ff0f781cf7c6a22d52957e50b104f5768b50c779",
+        "version" : "3.10.0"
       }
     },
     {
@@ -65,12 +83,21 @@
       }
     },
     {
+      "identity" : "swiftymarkdown",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/SimonFairbairn/SwiftyMarkdown.git",
+      "state" : {
+        "revision" : "dde451ab4ed9b77b328e21baa471fdfa0cf61369",
+        "version" : "1.2.4"
+      }
+    },
+    {
       "identity" : "xctest-dynamic-overlay",
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/pointfreeco/xctest-dynamic-overlay",
       "state" : {
-        "revision" : "770f990d3e4eececb57ac04a6076e22f8c97daeb",
-        "version" : "1.4.2"
+        "revision" : "a3f634d1a409c7979cabc0a71b3f26ffa9fc8af1",
+        "version" : "1.4.3"
       }
     }
   ],

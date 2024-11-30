@@ -6,66 +6,88 @@
 //
 
 import SwiftUI
+import SwiftyMarkdown
 
 struct FactCarouselView: View {
     // MARK: - Properties
-    let facts: [String]                      // List of facts to display
-    @Binding var currentIndex: Int           // Current fact index
-    let onFactChange: ((Int) -> Void)?       // Callback for external handling (optional)
-    var animationDuration: Double = 0.3      // Animation duration for transitions
+    let facts: [String]
+    @Binding var currentIndex: Int
+    let onFactChange: ((Int) -> Void)?
+    var animationDuration: Double = 0.3
     
     // MARK: - State
-    @State private var transitioning = false // Prevents multiple simultaneous transitions
+    @State private var transitioning = false
+    @Environment(\.colorScheme) private var colorScheme
+    
+    // MARK: - Layout Constants
+    private let horizontalPadding: CGFloat = 24
+    private let verticalPadding: CGFloat = 40
+    private let minFontSize: CGFloat = 16
+    private let maxFontSize: CGFloat = 36
+    private let shortTextThreshold = 20
+    private let longTextThreshold = 400
+    private let lineSpacing: CGFloat = 1.3
+    
+    // Dynamic font sizing based on content length
+    private func calculateFontSize(for text: String) -> CGFloat {
+        let length = text.count
+        
+        if length <= shortTextThreshold {
+            return maxFontSize
+        } else if length >= longTextThreshold {
+            return minFontSize
+        }
+        
+        // Linear interpolation between max and min font sizes
+        let ratio = CGFloat(length - shortTextThreshold) / CGFloat(longTextThreshold - shortTextThreshold)
+        return maxFontSize + (minFontSize - maxFontSize) * ratio
+    }
     
     var body: some View {
-        VStack {
-            // Current Fact
-            if !facts.isEmpty {
-                Text(facts[currentIndex])
-                    .font(.system(size: 18, weight: .regular, design: .rounded))
-                    .multilineTextAlignment(.leading)
-                    .transition(.asymmetric(
-                        insertion: .move(edge: .trailing).combined(with: .opacity),
-                        removal: .move(edge: .leading).combined(with: .opacity)
-                    ))
-                    .id(currentIndex) // Force update when currentIndex changes
-            }
-            
-            Spacer()
-            
-            // Navigation and Indicators
-            HStack {
-                // Previous Button
-                Button(action: { navigate(forward: false) }) {
-                    Image(systemName: "chevron.left")
-                        .font(.system(size: 20, weight: .semibold))
-                        .padding()
-                }
-                .disabled(transitioning)
-                
-                Spacer()
-                
-                // Progress Indicators
-                HStack(spacing: 6) {
-                    ForEach(facts.indices, id: \.self) { index in
-                        Circle()
-                            .fill(index == currentIndex ? Color.primary : Color.primary.opacity(0.3))
-                            .frame(width: 6, height: 6)
+        GeometryReader { geometry in
+            VStack(spacing: 0) {
+                if !facts.isEmpty {
+                    // Fact Content
+                    Text(facts[currentIndex])
+                        .font(.system(
+                            size: calculateFontSize(for: facts[currentIndex]),
+                            weight: .regular,
+                            design: .serif
+                        ))
+                        .lineSpacing(lineSpacing)
+                        .multilineTextAlignment(.center)
+                        .minimumScaleFactor(0.5)
+                        .padding(.horizontal, horizontalPadding)
+                        .frame(
+                            maxWidth: .infinity,
+                            maxHeight: .infinity,
+                            alignment: .center
+                        )
+                        .transition(.asymmetric(
+                            insertion: .move(edge: .trailing).combined(with: .opacity),
+                            removal: .move(edge: .leading).combined(with: .opacity)
+                        ))
+                        .id(currentIndex)
+                    
+                    // Bottom Controls
+                    VStack(spacing: 12) {
+                        Text("Tap to continue")
+                            .font(.system(size: 12, weight: .regular))
+                            .foregroundColor(.secondary)
+                            .opacity(0.6)
                     }
+                    .padding(.bottom, verticalPadding)
                 }
-                
-                Spacer()
-                
-                // Next Button
-                Button(action: { navigate(forward: true) }) {
-                    Image(systemName: "chevron.right")
-                        .font(.system(size: 20, weight: .semibold))
-                        .padding()
-                }
-                .disabled(transitioning)
+            }
+            .frame(
+                width: geometry.size.width,
+                height: geometry.size.height
+            )
+            .contentShape(Rectangle())
+            .onTapGesture {
+                navigate(forward: true)
             }
         }
-        .padding()
     }
     
     // MARK: - Navigation Logic
@@ -73,17 +95,18 @@ struct FactCarouselView: View {
         guard !transitioning else { return }
         transitioning = true
         
-        withAnimation(Animation.easeInOut(duration: animationDuration)) {
+        let impact = UIImpactFeedbackGenerator(style: .light)
+        impact.impactOccurred()
+        
+        withAnimation(.easeInOut(duration: animationDuration)) {
             if forward {
                 currentIndex = (currentIndex + 1) % facts.count
             } else {
                 currentIndex = (currentIndex - 1 + facts.count) % facts.count
             }
+            onFactChange?(currentIndex)
         }
         
-        onFactChange?(currentIndex)
-        
-        // Reset transition lock after animation
         DispatchQueue.main.asyncAfter(deadline: .now() + animationDuration) {
             transitioning = false
         }
@@ -91,10 +114,13 @@ struct FactCarouselView: View {
 }
 
 #Preview {
-    @State var index = 0
-    return FactCarouselView(
-        facts: ["Fact 1", "Fact 2", "Fact 3"],
-        currentIndex: $index,
+    FactCarouselView(
+        facts: [
+            "# Main Fact\nThis is a *styled* fact with **bold** text",
+            "## Secondary Fact\nAnother fact with [a link](https://example.com)",
+            "A plain fact with no styling"
+        ],
+        currentIndex: .constant(0),
         onFactChange: { newIndex in
             print("Changed to fact at index: \(newIndex)")
         }

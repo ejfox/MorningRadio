@@ -1,53 +1,110 @@
 import SwiftUI
 import Combine
+import Shiny
+import ScreenCorners
 
 struct LoadingView: View {
+    @Environment(\.colorScheme) private var colorScheme
+    
     // MARK: - State
     @State private var progressValue: Double = 0
     @State private var isInitialLoad: Bool = true
     @State private var minimumLoadingTimeElapsed = false
     @State private var currentTitleIndex: Int = 0
-    @State private var showTitles: Bool = false
+    @State private var showTitles: Bool = true
     
     // MARK: - Properties
-    var scraps: [Scrap] = [] {
-        didSet {
-            if !scraps.isEmpty {
-                startTitleScrolling()
-            }
-        }
-    }
+    let scraps: [Scrap]
     
     // MARK: - Constants
     private let loadingDuration: Double = 2.0
-    private let titleScrollDuration: Double = 0.15  // Duration per title
+    private let titleScrollDuration: Double = 0.5
+    
+    // Update color properties to be computed
+    private var backgroundColor: Color {
+        colorScheme == .dark ? .black : .white
+    }
+    
+    private var primaryColor: Color {
+        colorScheme == .dark ? .white : .black
+    }
+    
+    private var accentColor: Color {
+        colorScheme == .dark ? .blue : .blue.opacity(0.7)
+    }
+    
+    // Adjust glow properties based on color scheme
+    private var glowOpacity: Double {
+        colorScheme == .dark ? 0.6 : 0.4
+    }
+    
+    private var glowRadius: CGFloat {
+        colorScheme == .dark ? 8.0 : 6.0
+    }
+    
+    private var lineWidth: CGFloat {
+        colorScheme == .dark ? 3.0 : 2.5
+    }
     
     var body: some View {
         GeometryReader { geometry in
             ZStack {
                 // Background
-                Color.white
+                backgroundColor
                     .ignoresSafeArea()
                 
+                // Edge Tracing Line with enhanced shine and glow
+                ScreenEdgeShape(cornerRadius: UIScreen.main.displayCornerRadius)
+                    .trim(from: 0, to: progressValue)
+                    .stroke(primaryColor, lineWidth: lineWidth)
+                    .shadow(color: accentColor.opacity(glowOpacity), radius: glowRadius)
+                    .opacity(1.0)
+                    .animation(.linear(duration: loadingDuration), value: progressValue)
+                    .shiny(Gradient(stops: [
+                        .init(color: primaryColor, location: 0),
+                        .init(color: accentColor.opacity(0.5), location: 0.3),
+                        .init(color: primaryColor, location: 0.6),
+                        .init(color: accentColor.opacity(0.5), location: 1.0)
+                    ]))
+                
                 VStack(spacing: 40) {
-                    // Title
+                    // Title with shiny effect
                     Text("MORNING RADIO")
                         .font(.system(size: 16, weight: .medium, design: .monospaced))
+                        .foregroundColor(primaryColor)
                         .opacity(0.8)
+                        .shiny(Gradient(stops: [
+                            .init(color: primaryColor, location: 0),
+                            .init(color: Color.clear, location: 0.5),
+                            .init(color: primaryColor, location: 1)
+                        ]))
                     
-                    // Date
+                    // Date with subtle shine
                     Text(Date().formatted(.dateTime.weekday().month().day()))
                         .font(.system(size: 12, weight: .regular, design: .monospaced))
+                        .foregroundColor(primaryColor)
                         .opacity(0.6)
+                        .shiny(Gradient(stops: [
+                            .init(color: primaryColor, location: 0),
+                            .init(color: accentColor.opacity(0.5), location: 0.5),
+                            .init(color: primaryColor, location: 1)
+                        ]))
                     
                     // Scrolling Titles
                     if showTitles && !scraps.isEmpty {
                         Text(truncateTitle(scraps[currentTitleIndex].content))
                             .font(.system(size: 10, weight: .regular, design: .monospaced))
+                            .foregroundColor(primaryColor)
                             .opacity(0.4)
                             .lineLimit(1)
-                            .transition(.move(edge: .trailing))
-                            .id(currentTitleIndex)  // Force view update
+                            .transition(.opacity.combined(with: .move(edge: .trailing)))
+                            .id(currentTitleIndex)
+                            .shiny(Gradient(stops: [
+                                .init(color: primaryColor, location: 0),
+                                .init(color: Color.clear, location: 0.3),
+                                .init(color: primaryColor.opacity(0.5), location: 0.7),
+                                .init(color: Color.clear, location: 1)
+                            ]))
                     }
                 }
                 
@@ -56,22 +113,24 @@ struct LoadingView: View {
                     topText: "MORNING",
                     bottomText: "LOADING",
                     leftText: "YOU ARE WHAT YOU EAT",
-                    rightText: "LIVE IN UNCERTAINTY"
+                    rightText: "LIVE IN UNCERTAINTY",
+                    textColor: primaryColor,
+                    shineGradient: Gradient(stops: [
+                        .init(color: primaryColor.opacity(0.8), location: 0),
+                        .init(color: Color.clear, location: 0.5),
+                        .init(color: primaryColor.opacity(0.3), location: 1)
+                    ])
                 )
                 .font(.system(size: 10, weight: .regular, design: .monospaced))
                 .opacity(0.3)
-                
-                // Edge Tracing Line
-                ScreenEdgeShape()
-                    .trim(from: 0, to: progressValue)
-                    .stroke(Color.red, lineWidth: 2)
-                    .opacity(1.0)
-                    .animation(.linear(duration: loadingDuration), value: progressValue)
             }
         }
         .ignoresSafeArea()
         .onAppear {
             startAnimations()
+            if !scraps.isEmpty {
+                startTitleScrolling()
+            }
         }
     }
     
@@ -87,21 +146,17 @@ struct LoadingView: View {
     }
     
     private func startTitleScrolling() {
-        showTitles = true
-        animateNextTitle()
-    }
-    
-    private func animateNextTitle() {
         guard !scraps.isEmpty else { return }
         
-        withAnimation(.easeInOut(duration: titleScrollDuration)) {
-            currentTitleIndex = (currentTitleIndex + 1) % scraps.count
-        }
-        
-        // Schedule next title change
-        DispatchQueue.main.asyncAfter(deadline: .now() + titleScrollDuration) {
-            if !minimumLoadingTimeElapsed {
-                animateNextTitle()
+        // Start the title animation loop
+        Timer.scheduledTimer(withTimeInterval: titleScrollDuration, repeats: true) { timer in
+            if minimumLoadingTimeElapsed {
+                timer.invalidate()
+                return
+            }
+            
+            withAnimation(.easeInOut(duration: titleScrollDuration/2)) {
+                currentTitleIndex = (currentTitleIndex + 1) % scraps.count
             }
         }
     }
@@ -132,13 +187,13 @@ struct LoadingView: View {
     }
 }
 
-// Add this new shape struct at the bottom of LoadingView.swift
+// Update ScreenEdgeShape to use the correct corner radius
 struct ScreenEdgeShape: Shape {
+    let cornerRadius: CGFloat
+    
     func path(in rect: CGRect) -> Path {
         var path = Path()
         
-        // Get actual device corner radius
-        let cornerRadius: CGFloat = 47  // iPhone 14/15 Pro corner radius
         let padding: CGFloat = 0  // Remove padding to go right to the edge
         
         let innerRect = CGRect(
@@ -214,40 +269,50 @@ extension UIScreen {
     }
 }
 
-// Add BorderTextView struct:
+// Update BorderTextView
 struct BorderTextView: View {
     let topText: String
     let bottomText: String
     let leftText: String
     let rightText: String
+    let textColor: Color
+    let shineGradient: Gradient
     
     var body: some View {
         GeometryReader { geometry in
             ZStack {
                 // Top Text
                 Text(topText)
+                    .foregroundColor(textColor)
                     .rotationEffect(.degrees(0))
                     .position(x: geometry.size.width/2, y: 20)
+                    .shiny(shineGradient)
                 
                 // Bottom Text
                 Text(bottomText)
+                    .foregroundColor(textColor)
                     .rotationEffect(.degrees(0))
                     .position(x: geometry.size.width/2, y: geometry.size.height - 20)
+                    .shiny(shineGradient)
                 
                 // Left Text
                 Text(leftText)
+                    .foregroundColor(textColor)
                     .rotationEffect(.degrees(-90))
                     .position(x: 20, y: geometry.size.height/2)
+                    .shiny(shineGradient)
                 
                 // Right Text
                 Text(rightText)
+                    .foregroundColor(textColor)
                     .rotationEffect(.degrees(90))
                     .position(x: geometry.size.width - 20, y: geometry.size.height/2)
+                    .shiny(shineGradient)
             }
         }
     }
 }
 
 #Preview {
-    LoadingView()
+    LoadingView(scraps: [])
 }

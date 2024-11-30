@@ -60,10 +60,17 @@ struct ContentView: View {
                 let decoder = JSONDecoder()
                 decoder.keyDecodingStrategy = .convertFromSnakeCase
                 let decodedScraps = try decoder.decode([Scrap].self, from: rawResponse.data)
+                
+                // Filter out invalid scraps - simplified filter syntax
+                let validScraps = decodedScraps.filter { scrap in
+                    !scrap.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
+                    scrap.summary != nil &&
+                    !scrap.summary!.isEmpty
+                }
 
                 DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
                     withAnimation {
-                        self.scraps = decodedScraps
+                        self.scraps = validScraps
                         self.isLoading = false
                     }
                 }
