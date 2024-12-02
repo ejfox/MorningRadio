@@ -66,7 +66,7 @@ public struct ScrapDetailView: View {
                     }
                     .padding(.horizontal, horizontalPadding)
                     
-                    // Facts Content Area
+                    // Facts Content Area with Empty State
                     if !facts.isEmpty {
                         FactCarouselView(
                             facts: facts,
@@ -86,6 +86,28 @@ public struct ScrapDetailView: View {
                                 }
                             }
                         }
+                    } else {
+                        // Empty State
+                        VStack(spacing: 20) {
+                            Image(systemName: "quote.bubble.fill")
+                                .font(.system(size: 40))
+                                .foregroundStyle(.quaternary)
+                                .symbolEffect(.bounce, options: .repeating)
+                            
+                            Text("No facts available")
+                                .font(.system(size: 18, weight: .medium, design: .rounded))
+                                .foregroundStyle(.secondary)
+                            
+                            Text("This article hasn't been processed yet")
+                                .font(.system(size: 14, weight: .regular, design: .rounded))
+                                .foregroundStyle(.tertiary)
+                                .italic()
+                        }
+                        .frame(height: geometry.size.height * 0.6)
+                        .frame(maxWidth: .infinity)
+                        .background(.ultraThinMaterial.opacity(0.3))
+                        .cornerRadius(20)
+                        .padding(.horizontal, horizontalPadding)
                     }
                     
                     Spacer()
@@ -93,7 +115,7 @@ public struct ScrapDetailView: View {
                     // Bottom Controls
                     BottomControlsView(
                         currentIndex: currentFactIndex,
-                        totalCount: facts.count,
+                        totalCount: max(1, facts.count), // Always show at least one dot
                         onPrevious: { navigateFacts(forward: false) },
                         onNext: { navigateFacts(forward: true) },
                         onShare: { showShareSheet = true }

@@ -52,7 +52,7 @@ struct ContentView: View {
             do {
                 let rawResponse = try await SupabaseManager.shared.client
                     .from("scraps")
-                    .select("id, content, summary, metadata, screenshot_url, latitude, longitude")
+                    .select("id, content, title, summary, metadata, screenshot_url, latitude, longitude, url")
                     .order("created_at", ascending: false)
                     .limit(64)
                     .execute()
@@ -61,11 +61,11 @@ struct ContentView: View {
                 decoder.keyDecodingStrategy = .convertFromSnakeCase
                 let decodedScraps = try decoder.decode([Scrap].self, from: rawResponse.data)
                 
-                // Filter out invalid scraps - simplified filter syntax
+                // Filter out invalid scraps - now includes title check
                 let validScraps = decodedScraps.filter { scrap in
                     !scrap.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
-                    scrap.summary != nil &&
-                    !scrap.summary!.isEmpty
+                    scrap.title != nil &&
+                    !scrap.title!.isEmpty
                 }
 
                 DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
