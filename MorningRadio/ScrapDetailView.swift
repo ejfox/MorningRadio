@@ -17,6 +17,7 @@ public struct ScrapDetailView: View {
     @Environment(\.colorScheme) private var colorScheme
     @GestureState private var dragState = DragState.inactive
     @State private var position: CGFloat = 0
+    @EnvironmentObject private var settings: UserSettings
     
     // MARK: - Constants
     private let navigationBarHeight: CGFloat = 0.08
@@ -47,124 +48,243 @@ public struct ScrapDetailView: View {
             ZStack {
                 backgroundColor.ignoresSafeArea()
                 
+                // Background Image (if available)
+                if uiImage != nil {
+                    Image(uiImage: uiImage!)
+                        .resizable()
+                        .aspectRatio(contentMode: .fill)
+                        .frame(width: geometry.size.width, height: geometry.size.height)
+                        .blur(radius: 20)
+                        .opacity(0.15)
+                        .ignoresSafeArea()
+                } else if scrap.screenshotUrl != nil {
+                    OptimizedImage(
+                        url: scrap.screenshotUrl,
+                        size: geometry.size,
+                        mode: .fill,
+                        contentMode: .fill
+                    )
+                    .blur(radius: 20)
+                    .opacity(0.15)
+                    .ignoresSafeArea()
+                }
+                
                 VStack(spacing: 0) {
                     // Title section
                     VStack(alignment: .leading, spacing: 8) {
-                        Text(scrap.content.sanitizedHTML())
-                            .font(.system(size: 32, weight: .bold, design: .rounded))
-                            .foregroundColor(textColor)
-                            .multilineTextAlignment(.leading)
-                            .padding(.top, geometry.size.height * navigationBarHeight)
+                        if let title = scrap.title {
+                            Text(title)
+                                .dynamicFont(.title)
+                                .foregroundColor(textColor)
+                                .lineLimit(2)
+                                .fixedSize(horizontal: false, vertical: true)
+                                .padding(.top, geometry.size.height * 0.05)
+                                .padding(.horizontal, horizontalPadding)
+                                .opacity(isAppearing ? 1 : 0)
+                                .offset(y: isAppearing ? 0 : 20)
+                        }
                         
                         if let url = scrap.url {
                             Text(url)
-                                .font(.system(size: 14, weight: .regular, design: .monospaced))
+                                .dynamicFont(.caption)
                                 .foregroundColor(textColor.opacity(0.6))
                                 .lineLimit(1)
-                                .truncationMode(.middle)
+                                .padding(.horizontal, horizontalPadding)
+                                .opacity(isAppearing ? 0.6 : 0)
+                                .offset(y: isAppearing ? 0 : 10)
                         }
                     }
-                    .padding(.horizontal, horizontalPadding)
+                    .frame(width: geometry.size.width, alignment: .leading)
+                    .padding(.bottom, verticalSpacing)
                     
-                    // Facts Content Area with Empty State
+                    // Fact carousel
                     if !facts.isEmpty {
                         FactCarouselView(
                             facts: facts,
                             currentIndex: $currentFactIndex,
-                            onFactChange: { _ in
-                                HapticFeedback.light()
-                            }
+                            textColor: textColor,
+                            geometry: geometry
                         )
-                        .frame(height: geometry.size.height * 0.6)
-                        .contentShape(Rectangle())
-                        .onTapGesture {
-                            withAnimation(carouselAnimation) {
-                                if currentFactIndex == facts.count - 1 {
-                                    dismissAction()
-                                } else {
-                                    currentFactIndex = (currentFactIndex + 1) % facts.count
-                                }
-                            }
-                        }
-                    } else {
-                        // Empty State
-                        VStack(spacing: 20) {
-                            Image(systemName: "quote.bubble.fill")
-                                .font(.system(size: 40))
-                                .foregroundStyle(.quaternary)
-                                .symbolEffect(.bounce, options: .repeating)
-                            
-                            Text("No facts available")
-                                .font(.system(size: 18, weight: .medium, design: .rounded))
-                                .foregroundStyle(.secondary)
-                            
-                            Text("This article hasn't been processed yet")
-                                .font(.system(size: 14, weight: .regular, design: .rounded))
-                                .foregroundStyle(.tertiary)
-                                .italic()
-                        }
-                        .frame(height: geometry.size.height * 0.6)
-                        .frame(maxWidth: .infinity)
-                        .background(.ultraThinMaterial.opacity(0.3))
-                        .cornerRadius(20)
                         .padding(.horizontal, horizontalPadding)
+                        .opacity(isAppearing ? 1 : 0)
+                        .offset(y: isAppearing ? 0 : 30)
+                    } else {
+                        ScrollView {
+                            Text(scrap.content.sanitizedHTML())
+                                .dynamicFont(.body)
+                                .foregroundColor(textColor)
+                                .multilineTextAlignment(.leading)
+                                .padding(.horizontal, horizontalPadding)
+                                .opacity(isAppearing ? 1 : 0)
+                                .offset(y: isAppearing ? 0 : 30)
+                        }
                     }
                     
                     Spacer()
                     
-                    // Bottom Controls
-                    BottomControlsView(
-                        currentIndex: currentFactIndex,
-                        totalCount: max(1, facts.count), // Always show at least one dot
-                        onPrevious: { navigateFacts(forward: false) },
-                        onNext: { navigateFacts(forward: true) },
-                        onShare: { showShareSheet = true }
-                    )
+                    // Action buttons
+                    HStack(spacing: 20) {
+                        Button(action: {
+                            showShareSheet = true
+                        }) {
+                            Image(systemName: "square.and.arrow.up")
+                                .font(.system(size: 20))
+                                .foregroundColor(textColor)
+                                .frame(width: 44, height: 44)
+                                .background(Circle().fill(textColor.opacity(0.1)))
+                        }
+                        .accessibilityLabel("Share")
+                        
+                        Spacer()
+                        
+                        Button(action: dismissAction) {
+                            Image(systemName: "xmark")
+                                .font(.system(size: 20))
+                                .foregroundColor(textColor)
+                                .frame(width: 44, height: 44)
+                                .background(Circle().fill(textColor.opacity(0.1)))
+                        }
+                        .accessibilityLabel("Close")
+                    }
+                    .padding(.horizontal, horizontalPadding)
+                    .padding(.bottom, geometry.size.height * 0.05)
+                    .opacity(isAppearing ? 1 : 0)
+                }
+                .frame(width: geometry.size.width)
+            }
+            .gesture(
+                DragGesture()
+                    .updating($dragState) { value, state, _ in
+                        state = .dragging(translation: value.translation)
+                    }
+                    .onEnded { value in
+                        let threshold = geometry.size.height * 0.25
+                        if value.translation.height > threshold || value.predictedEndTranslation.height > threshold {
+                            dismissAction()
+                        }
+                    }
+            )
+            .offset(y: dragState.translation?.height ?? 0)
+            .animation(springAnimation, value: dragState.translation)
+            .onAppear {
+                withAnimation(appearanceAnimation) {
+                    isAppearing = true
                 }
             }
-            .gesture(makeDismissGesture(geometry: geometry))
-            .offset(y: dragState.translation + position)
-            .animation(.interactiveSpring(), value: dragState.translation)
-        }
-        .ignoresSafeArea()
-        .sheet(isPresented: $showShareSheet) {
-            ShareSheet(scrap: scrap)
+            .sheet(isPresented: $showShareSheet) {
+                ShareSheet(text: scrap.content, url: scrap.url)
+                    .environmentObject(settings)
+            }
         }
     }
     
-    // MARK: - Helper Functions
+    // MARK: - Helper Methods
     private func processFacts(from summary: String?) -> [String] {
         guard let summary = summary else { return [] }
-        return summary.components(separatedBy: .newlines)
+        
+        // Split by newlines and filter out empty lines
+        let lines = summary.components(separatedBy: .newlines)
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
             .filter { !$0.isEmpty }
+        
+        return lines
     }
+}
+
+// MARK: - Fact Carousel View
+struct FactCarouselView: View {
+    let facts: [String]
+    @Binding var currentIndex: Int
+    let textColor: Color
+    let geometry: GeometryProxy
+    @EnvironmentObject private var settings: UserSettings
     
-    private func navigateFacts(forward: Bool) {
-        withAnimation(carouselAnimation) {
-            if forward && currentFactIndex == facts.count - 1 {
-                dismissAction()
-            } else {
-                currentFactIndex = (currentFactIndex + (forward ? 1 : -1) + facts.count) % facts.count
-            }
-        }
-    }
-    
-    private func makeDismissGesture(geometry: GeometryProxy) -> some Gesture {
-        DragGesture()
-            .updating($dragState) { value, state, _ in
-                state = .dragging(translation: value.translation.height)
-            }
-            .onEnded { value in
-                let verticalVelocity = value.predictedEndLocation.y - value.location.y
-                let shouldDismiss = value.translation.height > 100 || verticalVelocity > 500
-                
-                withAnimation(springAnimation) {
-                    position = shouldDismiss ? geometry.size.height : 0
-                    if shouldDismiss {
-                        dismissAction()
+    var body: some View {
+        VStack(spacing: 16) {
+            // Fact content
+            ZStack {
+                ForEach(0..<facts.count, id: \.self) { index in
+                    VStack {
+                        Text(facts[index])
+                            .dynamicFont(.body)
+                            .foregroundColor(textColor)
+                            .multilineTextAlignment(.center)
+                            .padding()
+                            .frame(width: geometry.size.width - 48)
+                            .background(
+                                RoundedRectangle(cornerRadius: 12)
+                                    .fill(textColor.opacity(0.05))
+                            )
                     }
+                    .opacity(currentIndex == index ? 1 : 0)
+                    .scaleEffect(currentIndex == index ? 1 : 0.8)
+                    .offset(x: CGFloat(index - currentIndex) * geometry.size.width)
+                    .animation(.spring(response: 0.4, dampingFraction: 0.7), value: currentIndex)
+                    .gesture(
+                        DragGesture()
+                            .onEnded { value in
+                                if value.translation.width < -50 && currentIndex < facts.count - 1 {
+                                    withAnimation {
+                                        currentIndex += 1
+                                    }
+                                    if settings.useHaptics {
+                                        let impact = UIImpactFeedbackGenerator(style: .light)
+                                        impact.impactOccurred()
+                                    }
+                                } else if value.translation.width > 50 && currentIndex > 0 {
+                                    withAnimation {
+                                        currentIndex -= 1
+                                    }
+                                    if settings.useHaptics {
+                                        let impact = UIImpactFeedbackGenerator(style: .light)
+                                        impact.impactOccurred()
+                                    }
+                                }
+                            }
+                    )
+                    .accessibilityElement(children: .combine)
+                    .accessibilityLabel("Fact \(index + 1) of \(facts.count)")
+                    .accessibilityValue(facts[index])
+                    .accessibilityHint("Swipe left or right to navigate between facts")
                 }
             }
+            
+            // Pagination indicators
+            HStack(spacing: 8) {
+                ForEach(0..<facts.count, id: \.self) { index in
+                    Circle()
+                        .fill(currentIndex == index ? textColor : textColor.opacity(0.3))
+                        .frame(width: 8, height: 8)
+                        .scaleEffect(currentIndex == index ? 1.2 : 1)
+                        .animation(.spring(response: 0.3, dampingFraction: 0.7), value: currentIndex)
+                        .onTapGesture {
+                            withAnimation {
+                                currentIndex = index
+                            }
+                            if settings.useHaptics {
+                                let impact = UIImpactFeedbackGenerator(style: .light)
+                                impact.impactOccurred()
+                            }
+                        }
+                        .accessibilityHidden(true)
+                }
+            }
+            .padding(.top, 8)
+        }
+    }
+}
+
+// MARK: - Drag State
+enum DragState {
+    case inactive
+    case dragging(translation: CGSize)
+    
+    var translation: CGSize? {
+        switch self {
+        case .inactive:
+            return nil
+        case .dragging(let translation):
+            return translation
+        }
     }
 }

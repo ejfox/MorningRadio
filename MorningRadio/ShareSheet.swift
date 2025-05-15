@@ -4,8 +4,10 @@ import UIKit
 #endif
 
 struct ShareSheet: UIViewControllerRepresentable {
-    let scrap: Scrap
+    let text: String
+    let url: String?
     @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject private var settings: UserSettings
     
     func makeUIViewController(context: Context) -> UIActivityViewController {
         let (items, activities) = prepareShareContent()
@@ -26,33 +28,16 @@ struct ShareSheet: UIViewControllerRepresentable {
         var items: [Any] = []
         var activities: [UIActivity] = []
         
-        // Primary URL handling - prefer scrap.url over metadata.url
-        if let urlString = scrap.url ?? scrap.metadata?.url,
-           let url = URL(string: urlString) {
+        // Add URL if available
+        if let urlString = url, let url = URL(string: urlString) {
             activities.append(CopyURLActivity(url: url))
             items.append(url)
         }
         
-        // Fallback to href if no primary URL is available
-        else if let hrefString = scrap.metadata?.href,
-                let href = URL(string: hrefString) {
-            activities.append(CopyURLActivity(url: href))
-            items.append(href)
-        }
-        
-        // Summary handling
-        if let summary = scrap.summary {
-            activities.append(CopySummaryActivity(summary: summary))
-            items.append(summary)
-        }
-        
-        // Main content
-        items.append(scrap.content)
-        
-        // Location if available
-        if let location = scrap.metadata?.location {
-            items.append("📍 \(location)")
-        }
+        // Add text content
+        let cleanText = text.sanitizedHTML()
+        items.append(cleanText)
+        activities.append(CopyTextActivity(text: cleanText))
         
         return (items, activities)
     }
@@ -69,6 +54,10 @@ struct ShareSheet: UIViewControllerRepresentable {
             if completed {
                 DispatchQueue.main.async {
                     dismiss()
+                }
+                
+                if settings.useHaptics {
+                    HapticFeedback.success()
                 }
             }
         }
@@ -93,19 +82,19 @@ private class CopyURLActivity: UIActivity {
     }
 }
 
-private class CopySummaryActivity: UIActivity {
-    private let summary: String
+private class CopyTextActivity: UIActivity {
+    private let text: String
     
-    init(summary: String) { self.summary = summary }
+    init(text: String) { self.text = text }
     
-    override var activityTitle: String? { "Copy Summary" }
+    override var activityTitle: String? { "Copy Text" }
     override var activityImage: UIImage? { UIImage(systemName: "doc.on.doc") }
-    override var activityType: UIActivity.ActivityType { .copySummary }
+    override var activityType: UIActivity.ActivityType { .copyText }
     
     override func canPerform(withActivityItems activityItems: [Any]) -> Bool { true }
     
     override func prepare(withActivityItems activityItems: [Any]) {
-        UIPasteboard.general.string = summary
+        UIPasteboard.general.string = text
         HapticFeedback.success()
     }
 }
@@ -113,5 +102,62 @@ private class CopySummaryActivity: UIActivity {
 // MARK: - Activity Types
 private extension UIActivity.ActivityType {
     static let copyURL = UIActivity.ActivityType("com.morningradio.copyURL")
-    static let copySummary = UIActivity.ActivityType("com.morningradio.copySummary")
+    static let copyText = UIActivity.ActivityType("com.morningradio.copyText")
+}
+
+// MARK: - Haptic Feedback
+struct HapticFeedback {
+    static func light() {
+        let generator = UIImpactFeedbackGenerator(style: .light)
+        generator.impactOccurred()
+    }
+    
+    static func medium() {
+        let generator = UIImpactFeedbackGenerator(style: .medium)
+        generator.impactOccurred()
+    }
+    
+    static func heavy() {
+        let generator = UIImpactFeedbackGenerator(style: .heavy)
+        generator.impactOccurred()
+    }
+    
+    static func success() {
+        let generator = UINotificationFeedbackGenerator()
+        generator.notificationOccurred(.success)
+    }
+    
+    static func error() {
+        let generator = UINotificationFeedbackGenerator()
+        generator.notificationOccurred(.error)
+    }
+    
+    static func warning() {
+        let generator = UINotificationFeedbackGenerator()
+        generator.notificationOccurred(.warning)
+    }
+}
+
+// MARK: - String Extension
+extension String {
+    func sanitizedHTML() -> String {
+        // Simple HTML tag removal
+        var result = self.replacingOccurrences(of: "<[^>]+>", with: "", options: .regularExpression)
+        
+        // Replace common HTML entities
+        let entities = [
+            "&amp;": "&",
+            "&lt;": "<",
+            "&gt;": ">",
+            "&quot;": "\"",
+            "&#39;": "'",
+            "&nbsp;": " "
+        ]
+        
+        for (entity, replacement) in entities {
+            result = result.replacingOccurrences(of: entity, with: replacement)
+        }
+        
+        return result.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
 }

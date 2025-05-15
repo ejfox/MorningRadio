@@ -96,8 +96,10 @@ struct VerticalPagingView: View {
                         
                         ScrapView(
                             scrap: scraps[index],
-                            selectedScrap: $selectedScrap,
-                            selectedImage: $selectedImage
+                            selectedScrap: $selectedScrapa ,
+                            selectedImage: $selectedImage,
+                            currentIndex: $currentIndex,
+                            index: index
                         )
                         .frame(width: geometry.size.width, height: geometry.size.height)
                         .clipped()
@@ -176,6 +178,12 @@ struct VerticalPagingView: View {
                             let newIndex = max(0, min(scraps.count - 1, currentIndex + direction))
                             
                             if newIndex != currentIndex {
+                                // Clear any selected scrap when changing pages
+                                if selectedScrap != nil {
+                                    selectedScrap = nil
+                                    selectedImage = nil
+                                }
+                                
                                 withAnimation(springAnimation) {
                                     currentIndex = newIndex
                                 }
@@ -212,19 +220,36 @@ struct ScrapView: View {
     @State private var uiImage: UIImage?
     @State private var isAppearing = false
     @State private var isImageLoading = true
+    @EnvironmentObject private var settings: UserSettings
     
+    // Add a reference to the parent's current index
+    @Binding var currentIndex: Int
+    // Add the index of this scrap
+    let index: Int
     
     var body: some View {
         VStack {
             Spacer()
             VStack(alignment: .leading, spacing: 16) {
+                if let title = scrap.title {
+                    Text(title)
+                        .dynamicFont(.title)
+                        .foregroundColor(.white)
+                        .shadow(color: .black.opacity(0.3), radius: 3, x: 0, y: 2)
+                        .multilineTextAlignment(.leading)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .opacity(isAppearing ? 1 : 0)
+                        .offset(y: isAppearing ? 0 : 20)
+                }
+                
                 // Sanitize HTML content
                 Text(scrap.content.sanitizedHTML())
-                    .font(.system(size: 28, weight: .medium, design: .rounded))
-                    .foregroundColor(.white)
-                    .shadow(color: .black.opacity(0.3), radius: 3, x: 0, y: 2)
+                    .dynamicFont(.body)
+                    .foregroundColor(.white.opacity(0.9))
+                    .shadow(color: .black.opacity(0.3), radius: 2, x: 0, y: 1)
                     .multilineTextAlignment(.leading)
                     .frame(maxWidth: .infinity, alignment: .leading)
+                    .lineLimit(4)
                     .opacity(isAppearing ? 1 : 0)
                     .offset(y: isAppearing ? 0 : 20)
             }
@@ -233,89 +258,121 @@ struct ScrapView: View {
             .padding(.horizontal, 20)
             .padding(.bottom, 40)
             .shadow(color: Color.black.opacity(0.2), radius: 20, x: 0, y: 10)
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel("\(scrap.title ?? "Article")")
+            .accessibilityValue(scrap.content.sanitizedHTML())
+            .accessibilityHint("Tap to view details")
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(
-            ZStack {
-                if let image = uiImage {
-                    GeometryReader { geo in
-                        Image(uiImage: image)
-                            .resizable()
-                            .aspectRatio(contentMode: .fill)
-                            .frame(
-                                width: geo.size.width, 
-                                height: geo.size.height
-                            )
-                            .clipped()
-                            .overlay(
-                                LinearGradient(
-                                    colors: [
-                                        .black.opacity(0.2),
-                                        .black.opacity(0.7)
-                                    ],
-                                    startPoint: .top,
-                                    endPoint: .bottom
-                                )
-                            )
-                            .opacity(isAppearing ? 1 : 0)
+            GeometryReader { geo in
+                OptimizedImage(
+                    url: scrap.screenshotUrl,
+                    size: geo.size,
+                    mode: .fill,
+                    contentMode: .fill
+                )
+                .overlay(
+                    LinearGradient(
+                        colors: [
+                            .black.opacity(0.2),
+                            .black.opacity(0.7)
+                        ],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+                )
+                .opacity(isAppearing ? 1 : 0)
+                .onAppear {
+                    // Prefetch the next few images for smoother scrolling
+                    if settings.prefetchImages, let index = getCurrentIndex(), index < scraps.count - 3 {
+                        let nextScraps = Array(scraps[index+1..<min(index+4, scraps.count)])
+                        let urls = nextScraps.map { $0.screenshotUrl }
+                        ImagePrefetcher.prefetch(urls: urls, size: geo.size)
                     }
                 }
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .clipped()
-            .ignoresSafeArea()
         )
         .onAppear {
             withAnimation(.easeOut(duration: 0.8)) {
                 isAppearing = true
             }
-            loadImage()
+            
+            // Load the image for detail view
+            loadImageForDetailView()
         }
         .onDisappear {
             isAppearing = false
             uiImage = nil
         }
         .onTapGesture {
-            let impact = UIImpactFeedbackGenerator(style: .soft)
-            impact.impactOccurred()
+            // Only allow taps when this is the current card
+            guard index == currentIndex else { return }
             
-            withAnimation(.spring(response: 0.6, dampingFraction: 0.8)) {
+            if settings.useHaptics {
+                let impact = UIImpactFeedbackGenerator(style: .soft)
+                impact.impactOccurred()
+            }
+            
+            withAnimation(.easeInOut(duration: 0.3)) {
                 selectedScrap = scrap
                 selectedImage = uiImage
             }
         }
     }
     
-    private func loadImage() {
-        guard uiImage == nil else { return }
+    // Get the current index of this scrap in the global scraps array
+    private func getCurrentIndex() -> Int? {
+        return scraps.firstIndex(where: { $0.id == scrap.id })
+    }
+    
+    // Load the image for detail view (we still need this for the detail view transition)
+    private func loadImageForDetailView() {
+        guard uiImage == nil, let urlString = scrap.screenshotUrl else { return }
         
         isImageLoading = true
         
-        if let urlString = scrap.screenshotUrl,
-           let url = URL(string: urlString) {
-            DispatchQueue.global(qos: .userInitiated).async {
-                do {
-                    let data = try Data(contentsOf: url)
-                    if let image = UIImage(data: data) {
-                        DispatchQueue.main.async {
-                            withAnimation(.easeIn(duration: 0.3)) {
-                                self.uiImage = image
-                                self.isImageLoading = false
-                            }
-                        }
-                    }
-                } catch {
-                    DispatchQueue.main.async {
+        Task {
+            do {
+                let image = try await CloudinaryService.shared.loadImage(
+                    from: urlString,
+                    size: UIScreen.main.bounds.size,
+                    mode: settings.highQualityImages ? .fill : .fit
+                )
+                
+                await MainActor.run {
+                    withAnimation(.easeIn(duration: 0.3)) {
+                        self.uiImage = image
                         self.isImageLoading = false
                     }
-                    print("Failed to load image: \(error)")
+                }
+            } catch {
+                await MainActor.run {
+                    self.isImageLoading = false
                 }
             }
-        } else {
-            isImageLoading = false
         }
     }
-
+    
+    // Access to global scraps array for prefetching
+    private var scraps: [Scrap] {
+        if let parentView = findParentView(ofType: VerticalPagingView.self) {
+            return parentView.scraps
+        }
+        return []
+    }
+    
+    // Helper to find parent view
+    private func findParentView<T: View>(ofType type: T.Type) -> T? {
+        var currentView: Any = self
+        while let responder = Mirror(reflecting: currentView).superclassMirror {
+            if let parent = responder.value as? T {
+                return parent
+            }
+            currentView = responder.value
+        }
+        return nil
+    }
 }
 
 

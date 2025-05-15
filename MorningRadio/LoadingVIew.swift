@@ -5,6 +5,7 @@ import ScreenCorners
 
 struct LoadingView: View {
     @Environment(\.colorScheme) private var colorScheme
+    @EnvironmentObject private var settings: UserSettings
     
     // MARK: - State
     @State private var progressValue: Double = 0
@@ -70,7 +71,7 @@ struct LoadingView: View {
                 VStack(spacing: 40) {
                     // Title with shiny effect
                     Text("MORNING RADIO")
-                        .font(.system(size: 16, weight: .medium, design: .monospaced))
+                        .dynamicFont(.headline)
                         .foregroundColor(primaryColor)
                         .opacity(0.8)
                         .shiny(Gradient(stops: [
@@ -81,7 +82,7 @@ struct LoadingView: View {
                     
                     // Date with subtle shine
                     Text(Date().formatted(.dateTime.weekday().month().day()))
-                        .font(.system(size: 12, weight: .regular, design: .monospaced))
+                        .dynamicFont(.caption)
                         .foregroundColor(primaryColor)
                         .opacity(0.6)
                         .shiny(Gradient(stops: [
@@ -93,7 +94,7 @@ struct LoadingView: View {
                     // Scrolling Titles
                     if showTitles && !scraps.isEmpty {
                         Text(truncateTitle(scraps[currentTitleIndex].content))
-                            .font(.system(size: 10, weight: .regular, design: .monospaced))
+                            .dynamicFont(.caption2)
                             .foregroundColor(primaryColor)
                             .opacity(0.4)
                             .lineLimit(1)
@@ -105,6 +106,7 @@ struct LoadingView: View {
                                 .init(color: primaryColor.opacity(0.5), location: 0.7),
                                 .init(color: Color.clear, location: 1)
                             ]))
+                            .accessibilityLabel("Loading content: \(truncateTitle(scraps[currentTitleIndex].content))")
                     }
                 }
                 
@@ -121,7 +123,7 @@ struct LoadingView: View {
                         .init(color: primaryColor.opacity(0.3), location: 1)
                     ])
                 )
-                .font(.system(size: 10, weight: .regular, design: .monospaced))
+                .dynamicFont(.caption2)
                 .opacity(0.3)
             }
         }
@@ -132,6 +134,9 @@ struct LoadingView: View {
                 startTitleScrolling()
             }
         }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Loading Morning Radio")
+        .accessibilityValue("\(Int(progressValue * 100))% complete")
     }
     
     // MARK: - Helper Functions
@@ -283,36 +288,67 @@ struct BorderTextView: View {
             ZStack {
                 // Top Text
                 Text(topText)
+                    .dynamicFont(.caption2)
                     .foregroundColor(textColor)
-                    .rotationEffect(.degrees(0))
-                    .position(x: geometry.size.width/2, y: 20)
                     .shiny(shineGradient)
+                    .position(x: geometry.size.width / 2, y: 20)
                 
                 // Bottom Text
                 Text(bottomText)
+                    .dynamicFont(.caption2)
                     .foregroundColor(textColor)
-                    .rotationEffect(.degrees(0))
-                    .position(x: geometry.size.width/2, y: geometry.size.height - 20)
                     .shiny(shineGradient)
+                    .position(x: geometry.size.width / 2, y: geometry.size.height - 20)
                 
-                // Left Text
+                // Left Text (rotated)
                 Text(leftText)
+                    .dynamicFont(.caption2)
                     .foregroundColor(textColor)
-                    .rotationEffect(.degrees(-90))
-                    .position(x: 20, y: geometry.size.height/2)
                     .shiny(shineGradient)
+                    .rotationEffect(Angle(degrees: -90))
+                    .position(x: 20, y: geometry.size.height / 2)
                 
-                // Right Text
+                // Right Text (rotated)
                 Text(rightText)
+                    .dynamicFont(.caption2)
                     .foregroundColor(textColor)
-                    .rotationEffect(.degrees(90))
-                    .position(x: geometry.size.width - 20, y: geometry.size.height/2)
                     .shiny(shineGradient)
+                    .rotationEffect(Angle(degrees: 90))
+                    .position(x: geometry.size.width - 20, y: geometry.size.height / 2)
             }
         }
     }
 }
 
+// MARK: - String Extension
+extension String {
+    func sanitizedHTML() -> String {
+        // Simple HTML tag removal
+        var result = self.replacingOccurrences(of: "<[^>]+>", with: "", options: .regularExpression)
+        
+        // Replace common HTML entities
+        let entities = [
+            "&amp;": "&",
+            "&lt;": "<",
+            "&gt;": ">",
+            "&quot;": "\"",
+            "&#39;": "'",
+            "&nbsp;": " "
+        ]
+        
+        for (entity, replacement) in entities {
+            result = result.replacingOccurrences(of: entity, with: replacement)
+        }
+        
+        return result.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+}
+
 #Preview {
-    LoadingView(scraps: [])
+    LoadingView(scraps: [
+        Scrap(id: UUID(), content: "Loading content example 1", title: "Example 1"),
+        Scrap(id: UUID(), content: "Loading content example 2", title: "Example 2"),
+        Scrap(id: UUID(), content: "Loading content example 3", title: "Example 3")
+    ])
+    .environmentObject(UserSettings.shared)
 }
